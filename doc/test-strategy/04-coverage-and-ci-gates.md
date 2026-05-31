@@ -22,7 +22,11 @@ across all four packages, with two deliberate adjustments:
   constructs and `_internal` helpers that hold logic (the aspects, nag
   rules, WAF, magic-link, shared-distribution modules, cost-DoS guard, S3
   lifecycle), so the percentage reflects real coverage of real logic rather
-  than being diluted by generated or glue files.
+  than being diluted by generated or glue files. That list is held
+  `perFile: true` — each included file must clear 80% on its own, so a
+  weak file can't hide behind 100%-covered siblings — and the
+  `check-coverage-include` gate (below) fails if a new behaviour-bearing
+  `lib/**` file is missing from the list.
 
 A specific file may be excluded only with an inline comment justifying it
 (e.g. foundation excludes `src/secrets/schemas.ts`). Adding an exclusion is

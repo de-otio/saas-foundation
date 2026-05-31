@@ -3,6 +3,11 @@ name: CI
 on:
   pull_request:
     branches: [main]
+  # Also run on direct pushes to main so the gates guard the branch even
+  # when a change lands without a PR (the PR-only trigger would otherwise
+  # let a direct push bypass every check).
+  push:
+    branches: [main]
 
 # Opt into the Node 24 runtime for JavaScript actions ahead of the
 # 2026-06-02 deadline when GitHub flips the default. Removes the
