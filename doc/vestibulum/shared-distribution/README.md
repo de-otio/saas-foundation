@@ -114,9 +114,8 @@ sections carry the reasoning.
 | `deleteTenant` token window                                           | Documented 60-min ID-token validity window; optional `revokeActiveSessions` flag                            | 03         |
 | Unknown admin action handling                                         | Zod discriminated-union with strict rejection; 400 `UNKNOWN_ACTION`                                        | 03         |
 
-The 21 decisions above are committed; see
-[`../../review/2026-05-25-shared-distribution-design-review.md`](../../review/2026-05-25-shared-distribution-design-review.md)
-for the underlying security + AWS-best-practices review.
+The 21 decisions above are committed; they are the resolved output of
+the shared-distribution security + AWS-best-practices design review.
 
 ## Implementation status
 

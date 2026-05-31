@@ -14,21 +14,10 @@ project-reference graph, and pass their test suites; the
 shared-distribution (shared CloudFront + shared Cognito pool) feature
 is implemented in `vestibulum` and `vestibulum-cdk`. See
 [`doc/12-remaining-work.md`](doc/12-remaining-work.md) for outstanding
-items before publish. The design has been through three review passes:
-
-- [`doc/review/2026-05-24-initial-design-pass.md`](doc/review/2026-05-24-initial-design-pass.md)
-  — 12 BLOCKERs, 3 HIGH-security items, 29 SIGNIFICANT items, all
-  integrated.
-- [`doc/review/2026-05-24-foundation-cdk-and-aws-verification.md`](doc/review/2026-05-24-foundation-cdk-and-aws-verification.md)
-  — second pass focused on the newly added foundation-cdk package
-  and AWS-fact verification via the `aws-iac` and `aws-knowledge`
-  MCP servers. 2 BLOCKERs (Node 24 bump; reserved-concurrency
-  trap), 2 HIGH-security (DDB PITR cost disclosure; dashboard
-  substitution safety), 11 SIGNIFICANT, 5 NITs — all integrated.
-- [`doc/review/2026-05-25-shared-distribution-design-review.md`](doc/review/2026-05-25-shared-distribution-design-review.md)
-  — third pass on the shared-distribution design (shared CloudFront
-  distribution + shared Cognito pool multi-tenancy) now implemented
-  across `vestibulum` and `vestibulum-cdk`.
+items before publish. The design went through four design-review
+passes (full-set, foundation-cdk + AWS-fact verification,
+shared-distribution, and AWS Well-Architected cost pillar); their
+findings have been folded into the design docs and the shipped code.
 
 The Roman-house naming convention: the *foundation* is the slab the
 house sits on; *vestibulum* is the entrance hall inside it. They

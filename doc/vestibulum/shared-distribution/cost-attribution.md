@@ -26,7 +26,7 @@ request:
 | CloudFront distribution                       | Data transfer out + HTTP request count (pooled)  |
 | ACM wildcard cert (`us-east-1`)               | Free when attached to CloudFront                 |
 | Route 53 wildcard A-record                    | $0.40/hosted zone + $0.40/million queries        |
-| Lambda@Edge `check-auth`                      | Invocations + duration (pooled — no env vars, no per-tenant segregation; see [review B4](../../review/2026-05-25-shared-distribution-design-review.md)) |
+| Lambda@Edge `check-auth`                      | Invocations + duration (pooled — config baked into the bundle since Lambda@Edge forbids env vars, so no per-tenant segregation; see [`04-multi-aud-edge-check.md`](04-multi-aud-edge-check.md)) |
 | WAF WebACL (CloudFront-side)                  | $5/month WebACL + $1/million requests            |
 | WAF WebACL (Cognito-side)                     | $5/month WebACL + $1/million requests            |
 | Cognito user pool (base)                      | Free tier; per-MAU above 50k                     |
@@ -73,10 +73,10 @@ proxy-metric pattern gives a useful approximation:
 
 2. **Publish custom CloudWatch metrics with a `tenantId` dimension** for
    events that directly correspond to chargeable activity: magic-link
-   sends, Cognito challenge created / verified, token issued. These are
-   the N6 follow-up; see
-   [`../../review/2026-05-29-cost-pillar-review.md`](../../review/2026-05-29-cost-pillar-review.md)
-   § N6.
+   sends, Cognito challenge created / verified, token issued. The
+   `tenantId` dimension multiplies CloudWatch metric count, so weigh
+   the cardinality trade-off; these metrics live in
+   [`08-observability-and-audit.md`](08-observability-and-audit.md).
 
 3. **Use CloudWatch Logs Insights against the tenant-tagged log entries**
    to derive per-tenant activity counts at cost-reporting time. A query
@@ -182,6 +182,5 @@ magic-link sent):
 - [`01-architecture.md`](01-architecture.md) — the amortised-vs-metered
   topology table and N-CloudFront vs. shared-distribution comparison.
 - [`08-observability-and-audit.md`](08-observability-and-audit.md) —
-  the CloudWatch metrics catalogue; this doc's N6 items live there.
-- [`../../review/2026-05-29-cost-pillar-review.md`](../../review/2026-05-29-cost-pillar-review.md)
-  § S2 and N6 — the review findings this doc addresses.
+  the CloudWatch metrics catalogue; this doc's `tenantId`-dimension
+  metrics live there.

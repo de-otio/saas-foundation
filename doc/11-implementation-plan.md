@@ -291,10 +291,11 @@ Foundation runtime is feature-complete after P4.
 **MCP checkpoints during P4:**
 
 - Cognito custom attribute mutability — confirm the
-  AdminLinkProviderForUser empirical claim
-  ([second-review N3](review/2026-05-24-foundation-cdk-and-aws-verification.md))
-  against a real test pool before treating it as a hard-error in
-  the federation aspect.
+  AdminLinkProviderForUser empirical claim (that immutable custom
+  attributes block the link operation) against a real test pool
+  before treating it as a hard-error in the federation aspect. The
+  claim has no direct AWS-docs citation, so it is treated as an
+  empirical observation pending confirmation.
 - WAF managed rule groups pricing and rate-limit-per-IP semantics
   for the edge-resources design (lands in P5; the data informs the
   defaults).
@@ -519,7 +520,7 @@ The plan is complete when:
 - [ ] `npm run lint` clean; the four custom ESLint rules (cross-package imports, foundation no-cdk, foundation-cdk no-value-imports-of-foundation, Prisma sub-path) enforce.
 - [ ] CI gates pass: changeset gate, frozen-fanout gate, peerdep-range gate, vestibulum-cdk bundle-verify gate, cdk-nag snapshot gate.
 - [ ] Frozen-set brand checkers ≥ 95% covered; identity flows ≥ 80%.
-- [ ] AdminLinkProviderForUser empirical claim ([N3](review/2026-05-24-foundation-cdk-and-aws-verification.md)) confirmed against a real test pool — Aspect severity (error vs warning) reflects the result.
+- [ ] AdminLinkProviderForUser empirical claim (immutable custom attributes block the link operation) confirmed against a real test pool — Aspect severity (error vs warning) reflects the result.
 - [ ] `examples/shared-distribution/` synthesises cleanly.
 - [ ] Each package's `README.md` includes the public API surface and a five-line consumer example.
 - [ ] `CHANGELOG.md` per package lists every changeset since the skeleton PR.

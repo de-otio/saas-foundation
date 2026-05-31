@@ -138,7 +138,7 @@ RC validation; see
 
 ### 5. Cost-pillar follow-ups — DONE (shipped in `-cdk` 0.3.0, 2026-05-29)
 
-From [`doc/review/2026-05-29-cost-pillar-review.md`](review/2026-05-29-cost-pillar-review.md).
+From the AWS Well-Architected Cost Pillar design-review pass.
 0 BLOCKERs; all SIGNIFICANT and NIT findings integrated across
 `@de-otio/saas-foundation-cdk@0.3.0` and `@de-otio/vestibulum-cdk@0.3.0`:
 

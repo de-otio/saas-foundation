@@ -28,9 +28,12 @@ the short version is that a reviewer who knows a value is immutable
 does not have to investigate "who else might mutate this?" — the
 question doesn't apply.
 
-The first review pass caught one drift here
-([B-K](review/2026-05-24-initial-design-pass.md#b-k--claimresolverinputuserattributes-clientmetadata-drift-between-vocabulary-and-package-api));
-the convention exists to prevent the class.
+The first review pass caught one drift here: `ClaimResolverInput`
+used a plain `Record<string, string>` in this doc but
+`Readonly<Record<...>>` in the package API, and `ClaimResolverOutput`
+was exported in the consumer contract without being listed as frozen.
+This doc is the verbatim source of truth — per-package docs quote it —
+and the convention exists to prevent the class.
 
 ## Property-based brand checkers
 

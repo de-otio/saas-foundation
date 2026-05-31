@@ -183,14 +183,13 @@ EU-residency, AWS-native.
 
 ## Design reviews
 
-Point-in-time review passes, with findings tracked through to source:
-
-- [`review/2026-05-24-initial-design-pass.md`](review/2026-05-24-initial-design-pass.md)
-  — first full-set review (12 BLOCKERs, 3 HIGH-security, 29 SIGNIFICANT).
-- [`review/2026-05-24-foundation-cdk-and-aws-verification.md`](review/2026-05-24-foundation-cdk-and-aws-verification.md)
-  — foundation-cdk + AWS-fact verification pass.
-- [`review/2026-05-25-shared-distribution-design-review.md`](review/2026-05-25-shared-distribution-design-review.md)
-  — shared-distribution (shared CloudFront + shared Cognito pool) pass.
+The design went through four point-in-time review passes (full-set,
+foundation-cdk + AWS-fact verification, shared-distribution, and AWS
+Well-Architected cost pillar). Those punch lists have been resolved and
+their findings folded into the docs above and the shipped code. The one
+living review artifact is the quarterly
+[`review/cost-pillar-checkup.md`](review/cost-pillar-checkup.md), which
+carries the *Optimize over time* discipline forward.
 
 ## Status
 

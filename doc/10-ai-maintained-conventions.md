@@ -42,9 +42,8 @@ declaration removes the entire investigation.
 
 The cost is small in TypeScript — one keyword per field. The first
 review pass already caught one frozen-set drift between plain
-`Record` and `Readonly<Record>` ([B-K](review/2026-05-24-initial-design-pass.md#b-k--claimresolverinputuserattributes-clientmetadata-drift-between-vocabulary-and-package-api));
-making `Readonly` the default rather than the exception prevents the
-class.
+`Record` and `Readonly<Record>` on `ClaimResolverInput`; making
+`Readonly` the default rather than the exception prevents the class.
 
 ### 2. Pure functions where the domain allows it
 
