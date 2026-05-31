@@ -1,0 +1,65 @@
+{
+  "name": "@de-otio/saas-foundation-cdk",
+  "version": "0.3.0",
+  "type": "module",
+  "description": "AWS CDK constructs for de-otio SaaS deployment plumbing",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/de-otio/saas-foundation.git",
+    "directory": "packages/foundation-cdk"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./lambda": {
+      "import": "./dist/nodejs-lambda/index.js",
+      "types": "./dist/nodejs-lambda/index.d.ts"
+    },
+    "./queue": {
+      "import": "./dist/queue-with-dlq/index.js",
+      "types": "./dist/queue-with-dlq/index.d.ts"
+    },
+    "./table": {
+      "import": "./dist/single-table/index.js",
+      "types": "./dist/single-table/index.d.ts"
+    },
+    "./dashboards": {
+      "import": "./dist/dashboards/index.js",
+      "types": "./dist/dashboards/index.d.ts"
+    },
+    "./aspects": {
+      "import": "./dist/aspects/index.js",
+      "types": "./dist/aspects/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run",
+    "lint": "eslint lib test"
+  },
+  "peerDependencies": {
+    "aws-cdk-lib": "^2.200.0",
+    "constructs": "^10.0.0"
+  },
+  "devDependencies": {
+    "aws-cdk-lib": "^2.200.0",
+    "constructs": "^10.0.0",
+    "cdk-nag": "^2.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

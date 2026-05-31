@@ -1,0 +1,8 @@
+{
+  "comment": "Committed for deterministic synth. The example uses a placeholder hosted-zone lookup; in real consumer CDK code this file would contain the resolved zone ID + arn.",
+  "availability-zones:account=111111111111:region=eu-central-1": [
+    "eu-central-1a",
+    "eu-central-1b",
+    "eu-central-1c"
+  ]
+}

@@ -1,0 +1,163 @@
+{
+  "widgets": [
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 0,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "Request Rate",
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "${REGION}",
+        "metrics": [
+          [
+            "AWS/ApplicationELB",
+            "RequestCount",
+            "LoadBalancer",
+            "${ALB_ARN_SUFFIX}",
+            { "stat": "Sum", "period": 60, "label": "Requests/min" }
+          ]
+        ],
+        "yAxis": { "left": { "min": 0 } }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12,
+      "y": 0,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "Response Time p50 / p90 / p99",
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "${REGION}",
+        "metrics": [
+          [
+            "AWS/ApplicationELB",
+            "TargetResponseTime",
+            "LoadBalancer",
+            "${ALB_ARN_SUFFIX}",
+            { "stat": "p50", "period": 60, "label": "p50" }
+          ],
+          [
+            "AWS/ApplicationELB",
+            "TargetResponseTime",
+            "LoadBalancer",
+            "${ALB_ARN_SUFFIX}",
+            { "stat": "p90", "period": 60, "label": "p90" }
+          ],
+          [
+            "AWS/ApplicationELB",
+            "TargetResponseTime",
+            "LoadBalancer",
+            "${ALB_ARN_SUFFIX}",
+            { "stat": "p99", "period": 60, "label": "p99" }
+          ]
+        ],
+        "yAxis": { "left": { "min": 0 } }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 6,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "HTTP 5xx Errors",
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "${REGION}",
+        "metrics": [
+          [
+            "AWS/ApplicationELB",
+            "HTTPCode_Target_5XX_Count",
+            "LoadBalancer",
+            "${ALB_ARN_SUFFIX}",
+            { "stat": "Sum", "period": 60, "label": "5xx/min", "color": "#d62728" }
+          ]
+        ],
+        "yAxis": { "left": { "min": 0 } }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12,
+      "y": 6,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "HTTP 4xx Errors",
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "${REGION}",
+        "metrics": [
+          [
+            "AWS/ApplicationELB",
+            "HTTPCode_Target_4XX_Count",
+            "LoadBalancer",
+            "${ALB_ARN_SUFFIX}",
+            { "stat": "Sum", "period": 60, "label": "4xx/min", "color": "#ff7f0e" }
+          ]
+        ],
+        "yAxis": { "left": { "min": 0 } }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 12,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "Lambda Invocations",
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "${REGION}",
+        "metrics": [
+          [
+            "AWS/Lambda",
+            "Invocations",
+            "FunctionName",
+            "${LAMBDA_FUNCTION}",
+            { "stat": "Sum", "period": 60, "label": "Invocations/min" }
+          ]
+        ],
+        "yAxis": { "left": { "min": 0 } }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12,
+      "y": 12,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "Lambda Errors and Throttles",
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "${REGION}",
+        "metrics": [
+          [
+            "AWS/Lambda",
+            "Errors",
+            "FunctionName",
+            "${LAMBDA_FUNCTION}",
+            { "stat": "Sum", "period": 60, "label": "Errors", "color": "#d62728" }
+          ],
+          [
+            "AWS/Lambda",
+            "Throttles",
+            "FunctionName",
+            "${LAMBDA_FUNCTION}",
+            { "stat": "Sum", "period": 60, "label": "Throttles", "color": "#ff7f0e" }
+          ]
+        ],
+        "yAxis": { "left": { "min": 0 } }
+      }
+    }
+  ]
+}

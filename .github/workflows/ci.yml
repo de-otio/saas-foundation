@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+# Opt into the Node 24 runtime for JavaScript actions ahead of the
+# 2026-06-02 deadline when GitHub flips the default. Removes the
+# "Node.js 20 actions are deprecated" warning from every run.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build-and-test:
+    name: Build, typecheck, test, lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Fetch full history so CI gate scripts can diff against the base branch
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # Lambda bundles are gitignored build artifacts (the committed
+      # lambda-bundles.lock.json pins their SHA-256s for drift detection).
+      # This must run AFTER typecheck (tsc -b emits each package's dist/),
+      # because the bundler resolves @de-otio/vestibulum to its built
+      # dist/index.js. It must run BEFORE the test and example-synth steps,
+      # which load the bundles as CDK assets at synth time.
+      - name: Build Lambda bundles (vestibulum-cdk)
+        run: npm run build-bundles --workspace=@de-otio/vestibulum-cdk
+
+      - name: Test with coverage
+        run: npm test -- --coverage --reporter=verbose
+
+      - name: Lint
+        # Type-aware ESLint holds the full TypeScript program for the whole
+        # monorepo (lib + test + scripts across four packages) in memory,
+        # which exceeds Node's default ~2 GB old-space heap and aborts with
+        # SIGABRT (exit 134). Raise the heap for this single eslint process.
+        # Set per-step, not job-wide: the test step runs multiple vitest
+        # workers, and a job-wide per-process cap this high could
+        # collectively exhaust the runner.
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+        run: npm run lint
+
+      - name: Verify Lambda bundles (vestibulum-cdk)
+        run: npm run verify-bundles --workspace=@de-otio/vestibulum-cdk
+
+      - name: Synth shared-distribution example
+        working-directory: examples/shared-distribution
+        run: |
+          npm install --silent --no-audit --no-fund
+          npx cdk synth > /dev/null
+
+      - name: Changeset check
+        env:
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: npx tsx scripts/ci/check-changesets.ts
+
+      - name: Frozen-fanout check
+        env:
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+        run: npx tsx scripts/ci/check-frozen-fanout.ts
+
+      - name: Peer-dep range check
+        env:
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+        run: npx tsx scripts/ci/check-peerdep-ranges.ts

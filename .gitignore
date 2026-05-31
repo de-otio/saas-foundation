@@ -1,0 +1,48 @@
+# doc-search index
+.doc-search-index
+# doc-search index
+.mcp.json
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Test coverage
+coverage/
+
+# Lambda bundles (generated at build time)
+lambda-bundles/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Secrets / credentials
+credentials*
+*.pem
+id_rsa
+id_ed25519
+
+# CDK output
+cdk.out/
+
+# Editor
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# npm
+npm-debug.log*
+
+# Temporary files
+tmp/
+temp/
+plans/

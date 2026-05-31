@@ -1,0 +1,128 @@
+{
+  "name": "@de-otio/saas-foundation",
+  "version": "0.2.5",
+  "type": "module",
+  "description": "Runtime core for de-otio multi-tenant SaaS backends",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/de-otio/saas-foundation.git",
+    "directory": "packages/foundation"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./kv": {
+      "import": "./dist/kv/index.js",
+      "types": "./dist/kv/index.d.ts"
+    },
+    "./queue": {
+      "import": "./dist/queue/index.js",
+      "types": "./dist/queue/index.d.ts"
+    },
+    "./storage": {
+      "import": "./dist/storage/index.js",
+      "types": "./dist/storage/index.d.ts"
+    },
+    "./secrets": {
+      "import": "./dist/secrets/index.js",
+      "types": "./dist/secrets/index.d.ts"
+    },
+    "./session": {
+      "import": "./dist/session/index.js",
+      "types": "./dist/session/index.d.ts"
+    },
+    "./tenant": {
+      "import": "./dist/tenant/index.js",
+      "types": "./dist/tenant/index.d.ts"
+    },
+    "./audit": {
+      "import": "./dist/audit/index.js",
+      "types": "./dist/audit/index.d.ts"
+    },
+    "./audit/prisma": {
+      "import": "./dist/audit/prisma.js",
+      "types": "./dist/audit/prisma.d.ts"
+    },
+    "./logger": {
+      "import": "./dist/logger/index.js",
+      "types": "./dist/logger/index.d.ts"
+    },
+    "./request-context": {
+      "import": "./dist/request-context/index.js",
+      "types": "./dist/request-context/index.d.ts"
+    },
+    "./rate-limit": {
+      "import": "./dist/rate-limit/index.js",
+      "types": "./dist/rate-limit/index.d.ts"
+    },
+    "./region": {
+      "import": "./dist/region/index.js",
+      "types": "./dist/region/index.d.ts"
+    },
+    "./feature-toggles": {
+      "import": "./dist/feature-toggles/index.js",
+      "types": "./dist/feature-toggles/index.d.ts"
+    },
+    "./feature-toggles/prisma": {
+      "import": "./dist/feature-toggles/prisma.js",
+      "types": "./dist/feature-toggles/prisma.d.ts"
+    },
+    "./net": {
+      "import": "./dist/net/index.js",
+      "types": "./dist/net/index.d.ts"
+    },
+    "./types/frozen": {
+      "import": "./dist/types/frozen/index.js",
+      "types": "./dist/types/frozen/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run",
+    "lint": "eslint src test"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.700.0",
+    "@aws-sdk/client-s3": "^3.700.0",
+    "@aws-sdk/client-secrets-manager": "^3.700.0",
+    "@aws-sdk/client-sqs": "^3.700.0",
+    "@aws-sdk/client-ssm": "^3.700.0",
+    "@aws-sdk/s3-request-presigner": "^3.700.0",
+    "@aws-sdk/util-dynamodb": "^3.700.0",
+    "cockatiel": "^3.2.0",
+    "cookie": "^1.0.0",
+    "pino": "^9.14.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@prisma/client": "^5.22.0",
+    "@smithy/util-stream": "^4.6.4",
+    "aws-sdk-client-mock": "^4.1.0",
+    "fast-check": "^3.23.0",
+    "pino-pretty": "^11.3.0"
+  },
+  "peerDependencies": {
+    "@prisma/client": ">=5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@prisma/client": {
+      "optional": true
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

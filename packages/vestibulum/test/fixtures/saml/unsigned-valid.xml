@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" entityID="https://unsigned.example.com/saml" ID="_unsigned-entity" validUntil="2099-01-01T00:00:00Z" cacheDuration="PT6H">
+  <md:IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+    <md:KeyDescriptor use="signing">
+      <ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+        <ds:X509Data>
+          <ds:X509Certificate>MIICtzCCAZ+gAwIBAgIBATANBgkqhkiG9w0BAQsFADAeMRwwGgYDVQQDExN2ZXN0aWJ1bHVtLXRlc3QtaWRwMCAXDTIwMDEwMTAwMDAwMFoYDzIwOTkwMTAxMDAwMDAwWjAeMRwwGgYDVQQDExN2ZXN0aWJ1bHVtLXRlc3QtaWRwMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxPUY+9MfXAmnO85Mrf/Qv149z3u93TIHt6nWd41Su3vl+krARY2QwP8UU/3+l0DEwncNcsYCdNmUQZhfYeZp4w8+ThvGcvUmgcy0r5MYhEj9G+lugAbehjoFkBvFhpOpr6Dko+VS1e/jdGjY6kvYxX6Rd/1FHnhNBAhW9RatJSAp9nufDCUB+D0ihrApPN9tSlkfxedZOIHpQjUKhbzmIPzTnof4GKmEpBXEiRhz4rgqnELdVEwY/my2D38QSLZ6iLwABfEfwuoRYQmqmGgOB7T0RKCmZ+p6p8fBL4rRRRYPFHd+8/Mc/BCZA03JRr0OE+BJQNU8IdrwF58UvwpkHwIDAQABMA0GCSqGSIb3DQEBCwUAA4IBAQA4zkw3isvuei/U44G4fzkLFH4c9ueVzXgyZm5iRxnZ/EeiI0EYNqSRu+MJN7mkNPotbi6nxhRDBtMvzMxnr/uiTsuE9SVQxU4D8Z/Ac9G2qN9QwOHGxb0FsD487JsbwWvjMpUSk9qxx5E5c9rdyp2mzt7c14v5j4ZMIjGRX3uroK0Q172n6OmB+H29SN5CG8H5NtkoZZ8hhAXLa2E7VszFTJURrLDgQFeLiGAwAGF7HLst+dOw81v3GyEykw7Rx+T7IY+R1QMhBgHOvcQBFA3ynRzdPlYp8Fca0B0bwcdVNIPVgpgsP5u2eeOBd1+lwcDZEk69ympp2HwGPbHUQRdt</ds:X509Certificate>
+        </ds:X509Data>
+      </ds:KeyInfo>
+    </md:KeyDescriptor>
+    <md:NameIDFormat>urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress</md:NameIDFormat>
+    <md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.example.com/sso/redirect"/>
+    <md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" Location="https://idp.example.com/sso/post"/>
+  </md:IDPSSODescriptor>
+</md:EntityDescriptor>

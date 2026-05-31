@@ -1,0 +1,219 @@
+{
+  "widgets": [
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 0,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "Lambda Invocations",
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "${REGION}",
+        "metrics": [
+          [
+            "AWS/Lambda",
+            "Invocations",
+            "FunctionName",
+            "${LAMBDA_FUNCTION}",
+            { "stat": "Sum", "period": 300, "label": "Invocations" }
+          ]
+        ],
+        "yAxis": { "left": { "min": 0 } }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12,
+      "y": 0,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "Lambda Errors",
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "${REGION}",
+        "metrics": [
+          [
+            "AWS/Lambda",
+            "Errors",
+            "FunctionName",
+            "${LAMBDA_FUNCTION}",
+            { "stat": "Sum", "period": 300, "label": "Errors", "color": "#d62728" }
+          ]
+        ],
+        "yAxis": { "left": { "min": 0 } }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 6,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "Lambda Duration p50 / p90",
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "${REGION}",
+        "metrics": [
+          [
+            "AWS/Lambda",
+            "Duration",
+            "FunctionName",
+            "${LAMBDA_FUNCTION}",
+            { "stat": "p50", "period": 300, "label": "p50" }
+          ],
+          [
+            "AWS/Lambda",
+            "Duration",
+            "FunctionName",
+            "${LAMBDA_FUNCTION}",
+            { "stat": "p90", "period": 300, "label": "p90" }
+          ]
+        ],
+        "yAxis": { "left": { "min": 0 } }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12,
+      "y": 6,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "Lambda Throttles",
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "${REGION}",
+        "metrics": [
+          [
+            "AWS/Lambda",
+            "Throttles",
+            "FunctionName",
+            "${LAMBDA_FUNCTION}",
+            { "stat": "Sum", "period": 300, "label": "Throttles", "color": "#ff7f0e" }
+          ]
+        ],
+        "yAxis": { "left": { "min": 0 } }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 12,
+      "width": 24,
+      "height": 6,
+      "properties": {
+        "title": "Lambda Concurrent Executions",
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "${REGION}",
+        "metrics": [
+          [
+            "AWS/Lambda",
+            "ConcurrentExecutions",
+            "FunctionName",
+            "${LAMBDA_FUNCTION}",
+            { "stat": "Maximum", "period": 60, "label": "Concurrent executions" }
+          ]
+        ],
+        "yAxis": { "left": { "min": 0 } }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 18,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "SQS Messages Visible",
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "${REGION}",
+        "metrics": [
+          [
+            "AWS/SQS",
+            "ApproximateNumberOfMessagesVisible",
+            "QueueName",
+            "${QUEUE_NAME}",
+            { "stat": "Average", "period": 60, "label": "Visible" }
+          ]
+        ],
+        "yAxis": { "left": { "min": 0 } }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12,
+      "y": 18,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "SQS Messages In Flight",
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "${REGION}",
+        "metrics": [
+          [
+            "AWS/SQS",
+            "ApproximateNumberOfMessagesNotVisible",
+            "QueueName",
+            "${QUEUE_NAME}",
+            { "stat": "Average", "period": 60, "label": "In flight" }
+          ]
+        ],
+        "yAxis": { "left": { "min": 0 } }
+      }
+    },
+    {
+      "_optional": "${DLQ_NAME}",
+      "type": "metric",
+      "x": 0,
+      "y": 24,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "DLQ Depth",
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "${REGION}",
+        "metrics": [
+          [
+            "AWS/SQS",
+            "ApproximateNumberOfMessagesVisible",
+            "QueueName",
+            "${DLQ_NAME}",
+            { "stat": "Maximum", "period": 60, "label": "DLQ depth", "color": "#d62728" }
+          ]
+        ],
+        "yAxis": { "left": { "min": 0 } }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12,
+      "y": 24,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "SQS Age of Oldest Message",
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "${REGION}",
+        "metrics": [
+          [
+            "AWS/SQS",
+            "ApproximateAgeOfOldestMessage",
+            "QueueName",
+            "${QUEUE_NAME}",
+            { "stat": "Maximum", "period": 60, "label": "Age (s)" }
+          ]
+        ],
+        "yAxis": { "left": { "min": 0 } }
+      }
+    }
+  ]
+}

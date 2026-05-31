@@ -1,0 +1,276 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`MagicLinkAuthSite cdk-nag snapshot > produces the expected nag findings for a default MagicLinkAuthSite 1`] = `
+[
+  {
+    "entry": {
+      "data": "AwsSolutions-S1: The S3 Bucket has server access logs disabled.
+",
+      "type": "aws:cdk:error",
+    },
+    "id": "/AuthSiteNagStack/OriginBucket/Resource",
+    "level": "error",
+  },
+  {
+    "entry": {
+      "data": "AwsSolutions-S10: The S3 Bucket or bucket policy does not require requests to use SSL.
+",
+      "type": "aws:cdk:error",
+    },
+    "id": "/AuthSiteNagStack/OriginBucket/Resource",
+    "level": "error",
+  },
+  {
+    "entry": {
+      "data": "AwsSolutions-L1: The non-container Lambda function is not configured to use the latest runtime version.
+",
+      "type": "aws:cdk:error",
+    },
+    "id": "/AuthSiteNagStack/Custom::CDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C/Resource",
+    "level": "error",
+  },
+  {
+    "entry": {
+      "data": "AwsSolutions-COG1: The Cognito user pool does not have a password policy that minimally specify a password length of at least 8 characters, as well as requiring uppercase, numeric, and special characters.
+",
+      "type": "aws:cdk:error",
+    },
+    "id": "/AuthSiteNagStack/Identity/Pool/Resource",
+    "level": "error",
+  },
+  {
+    "entry": {
+      "data": "AwsSolutions-COG2: The Cognito user pool does not require MFA.
+",
+      "type": "aws:cdk:warning",
+    },
+    "id": "/AuthSiteNagStack/Identity/Pool/Resource",
+    "level": "warning",
+  },
+  {
+    "entry": {
+      "data": "AwsSolutions-COG8: The Cognito user pool is not on the plus tier / feature plan.
+",
+      "type": "aws:cdk:error",
+    },
+    "id": "/AuthSiteNagStack/Identity/Pool/Resource",
+    "level": "error",
+  },
+  {
+    "entry": {
+      "data": "AwsSolutions-DDB3: The DynamoDB table does not have Point-in-time Recovery enabled.
+",
+      "type": "aws:cdk:warning",
+    },
+    "id": "/AuthSiteNagStack/Identity/TokenTable/Resource",
+    "level": "warning",
+  },
+  {
+    "entry": {
+      "data": "AwsSolutions-DDB3: The DynamoDB table does not have Point-in-time Recovery enabled.
+",
+      "type": "aws:cdk:warning",
+    },
+    "id": "/AuthSiteNagStack/Identity/RateLimitTable/Resource",
+    "level": "warning",
+  },
+  {
+    "entry": {
+      "data": "AwsSolutions-DDB3: The DynamoDB table does not have Point-in-time Recovery enabled.
+",
+      "type": "aws:cdk:warning",
+    },
+    "id": "/AuthSiteNagStack/Identity/DenylistTable/Resource",
+    "level": "warning",
+  },
+  {
+    "entry": {
+      "data": "AwsSolutions-SNS3: The SNS Topic does not require publishers to use SSL.
+",
+      "type": "aws:cdk:error",
+    },
+    "id": "/AuthSiteNagStack/Identity/BounceTopic/Resource",
+    "level": "error",
+  },
+  {
+    "entry": {
+      "data": "AwsSolutions-S10: The S3 Bucket or bucket policy does not require requests to use SSL.
+",
+      "type": "aws:cdk:error",
+    },
+    "id": "/AuthSiteNagStack/OriginBucket/Policy/Resource",
+    "level": "error",
+  },
+  {
+    "entry": {
+      "data": "AwsSolutions-L1: The non-container Lambda function is not configured to use the latest runtime version.
+",
+      "type": "aws:cdk:error",
+    },
+    "id": "/AuthSiteNagStack/Site/AuthVerifyFn/Resource",
+    "level": "error",
+  },
+  {
+    "entry": {
+      "data": "AwsSolutions-L1: The non-container Lambda function is not configured to use the latest runtime version.
+",
+      "type": "aws:cdk:error",
+    },
+    "id": "/AuthSiteNagStack/Site/AuthSignoutFn/Resource",
+    "level": "error",
+  },
+  {
+    "entry": {
+      "data": "AwsSolutions-S1: The S3 Bucket has server access logs disabled.
+",
+      "type": "aws:cdk:error",
+    },
+    "id": "/AuthSiteNagStack/Site/LoginPageBucket/Resource",
+    "level": "error",
+  },
+  {
+    "entry": {
+      "data": "AwsSolutions-CFR1: The CloudFront distribution may require Geo restrictions.
+",
+      "type": "aws:cdk:warning",
+    },
+    "id": "/AuthSiteNagStack/Site/Distribution/Resource",
+    "level": "warning",
+  },
+  {
+    "entry": {
+      "data": "AwsSolutions-CFR3: The CloudFront distribution does not have access logging enabled.
+",
+      "type": "aws:cdk:error",
+    },
+    "id": "/AuthSiteNagStack/Site/Distribution/Resource",
+    "level": "error",
+  },
+  {
+    "entry": {
+      "data": "AwsSolutions-IAM4[Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole]: The IAM user, role, or group uses AWS managed policies.
+",
+      "type": "aws:cdk:error",
+    },
+    "id": "/AuthSiteNagStack/LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8a/ServiceRole/Resource",
+    "level": "error",
+  },
+  {
+    "entry": {
+      "data": "AwsSolutions-IAM4[Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole]: The IAM user, role, or group uses AWS managed policies.
+",
+      "type": "aws:cdk:error",
+    },
+    "id": "/AuthSiteNagStack/Custom::CDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C/ServiceRole/Resource",
+    "level": "error",
+  },
+  {
+    "entry": {
+      "data": "AwsSolutions-IAM4[Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole]: The IAM user, role, or group uses AWS managed policies.
+",
+      "type": "aws:cdk:error",
+    },
+    "id": "/AuthSiteNagStack/Site/AuthVerifyFn/ServiceRole/Resource",
+    "level": "error",
+  },
+  {
+    "entry": {
+      "data": "AwsSolutions-IAM4[Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole]: The IAM user, role, or group uses AWS managed policies.
+",
+      "type": "aws:cdk:error",
+    },
+    "id": "/AuthSiteNagStack/Site/AuthSignoutFn/ServiceRole/Resource",
+    "level": "error",
+  },
+  {
+    "entry": {
+      "data": "AwsSolutions-L1: The non-container Lambda function is not configured to use the latest runtime version.
+",
+      "type": "aws:cdk:error",
+    },
+    "id": "/AuthSiteNagStack/Site/CheckAuthFn/Fn/Resource",
+    "level": "error",
+  },
+  {
+    "entry": {
+      "data": "AwsSolutions-IAM5[Resource::*]: The IAM entity contains wildcard permissions and does not have a cdk-nag rule suppression with evidence for those permission.
+",
+      "type": "aws:cdk:error",
+    },
+    "id": "/AuthSiteNagStack/LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8a/ServiceRole/DefaultPolicy/Resource",
+    "level": "error",
+  },
+  {
+    "entry": {
+      "data": "AwsSolutions-IAM5[Action::s3:GetObject*]: The IAM entity contains wildcard permissions and does not have a cdk-nag rule suppression with evidence for those permission.
+",
+      "type": "aws:cdk:error",
+    },
+    "id": "/AuthSiteNagStack/Custom::CDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C/ServiceRole/DefaultPolicy/Resource",
+    "level": "error",
+  },
+  {
+    "entry": {
+      "data": "AwsSolutions-IAM5[Action::s3:GetBucket*]: The IAM entity contains wildcard permissions and does not have a cdk-nag rule suppression with evidence for those permission.
+",
+      "type": "aws:cdk:error",
+    },
+    "id": "/AuthSiteNagStack/Custom::CDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C/ServiceRole/DefaultPolicy/Resource",
+    "level": "error",
+  },
+  {
+    "entry": {
+      "data": "AwsSolutions-IAM5[Action::s3:List*]: The IAM entity contains wildcard permissions and does not have a cdk-nag rule suppression with evidence for those permission.
+",
+      "type": "aws:cdk:error",
+    },
+    "id": "/AuthSiteNagStack/Custom::CDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C/ServiceRole/DefaultPolicy/Resource",
+    "level": "error",
+  },
+  {
+    "entry": {
+      "data": "AwsSolutions-IAM5[Resource::arn:<AWS::Partition>:s3:::cdk-hnb659fds-assets-123456789012-us-east-1/*]: The IAM entity contains wildcard permissions and does not have a cdk-nag rule suppression with evidence for those permission.
+",
+      "type": "aws:cdk:error",
+    },
+    "id": "/AuthSiteNagStack/Custom::CDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C/ServiceRole/DefaultPolicy/Resource",
+    "level": "error",
+  },
+  {
+    "entry": {
+      "data": "AwsSolutions-IAM5[Action::s3:DeleteObject*]: The IAM entity contains wildcard permissions and does not have a cdk-nag rule suppression with evidence for those permission.
+",
+      "type": "aws:cdk:error",
+    },
+    "id": "/AuthSiteNagStack/Custom::CDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C/ServiceRole/DefaultPolicy/Resource",
+    "level": "error",
+  },
+  {
+    "entry": {
+      "data": "AwsSolutions-IAM5[Action::s3:Abort*]: The IAM entity contains wildcard permissions and does not have a cdk-nag rule suppression with evidence for those permission.
+",
+      "type": "aws:cdk:error",
+    },
+    "id": "/AuthSiteNagStack/Custom::CDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C/ServiceRole/DefaultPolicy/Resource",
+    "level": "error",
+  },
+  {
+    "entry": {
+      "data": "AwsSolutions-IAM5[Resource::<SiteLoginPageBucket37CDE33F.Arn>/*]: The IAM entity contains wildcard permissions and does not have a cdk-nag rule suppression with evidence for those permission.
+",
+      "type": "aws:cdk:error",
+    },
+    "id": "/AuthSiteNagStack/Custom::CDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C/ServiceRole/DefaultPolicy/Resource",
+    "level": "error",
+  },
+  {
+    "entry": {
+      "data": "AwsSolutions-IAM5[Resource::*]: The IAM entity contains wildcard permissions and does not have a cdk-nag rule suppression with evidence for those permission.
+",
+      "type": "aws:cdk:error",
+    },
+    "id": "/AuthSiteNagStack/Site/CheckAuthFn/Fn/ServiceRole/DefaultPolicy/Resource",
+    "level": "error",
+  },
+]
+`;

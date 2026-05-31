@@ -1,0 +1,65 @@
+{
+  "vestibulumVersion": "0.2.0",
+  "bundles": {
+    "admin": {
+      "sha256": "sha256:9ddc4a6a00bbc5e796ecd4e17367601ceeb33a0665276f84a7ccbee5775a8c28",
+      "sizeBytes": 76002,
+      "filename": "admin/index.mjs"
+    },
+    "auth-signout": {
+      "sha256": "sha256:80658cacafa0d96b06a6c946987655dfb0af87c51970c3a81eae2a9bf9d3554f",
+      "sizeBytes": 952150,
+      "filename": "auth-signout/index.mjs"
+    },
+    "auth-verify": {
+      "sha256": "sha256:167c6b6e2f275d7af0ef9dcef6448d472603b304e4cc44d2820801691b56ef6d",
+      "sizeBytes": 952490,
+      "filename": "auth-verify/index.mjs"
+    },
+    "bounce-handler": {
+      "sha256": "sha256:07d43dc06ff3d270515a663e2959ca9116421b596d68ec621634122b1f8b3e0a",
+      "sizeBytes": 952645,
+      "filename": "bounce-handler/index.mjs"
+    },
+    "check-auth": {
+      "sha256": "sha256:06cd97b162c906cf5364974d10dfe59004b7f782be7b3c4e3f9c25ce8ea17e5f",
+      "sizeBytes": 967272,
+      "filename": "check-auth/index.mjs"
+    },
+    "create-auth": {
+      "sha256": "sha256:e7711d167d64f0ea3b4e2fdf090b5c0df841e9d771de2be878b532ccf2548f51",
+      "sizeBytes": 954505,
+      "filename": "create-auth/index.mjs"
+    },
+    "define-auth": {
+      "sha256": "sha256:346bdb370663972e767a78f0486bfa32bfd94632b40af7d2d5f548bf1d5b0bbc",
+      "sizeBytes": 950690,
+      "filename": "define-auth/index.mjs"
+    },
+    "post-confirmation": {
+      "sha256": "sha256:74d7f4e78c0c3de9ded64795011efef9d9da99b9b26ce6483b4464808fc3a62b",
+      "sizeBytes": 951193,
+      "filename": "post-confirmation/index.mjs"
+    },
+    "pre-signup": {
+      "sha256": "sha256:dc9292d03602db8c48de50e960d769a023670088351f2fd3a6c9841f86949b94",
+      "sizeBytes": 952152,
+      "filename": "pre-signup/index.mjs"
+    },
+    "pre-token-generation": {
+      "sha256": "sha256:837fe04b13983b6d7d47c309eb61842a57e5b24f345043a1f702fb678db7f657",
+      "sizeBytes": 953625,
+      "filename": "pre-token-generation/index.mjs"
+    },
+    "reconciler": {
+      "sha256": "sha256:05f02df1ec12972c36ed376da1cc0be867cd98432335a6e7db755626456cb938",
+      "sizeBytes": 1947,
+      "filename": "reconciler/index.mjs"
+    },
+    "verify-auth": {
+      "sha256": "sha256:c82e4b50090fd7eaa32a31e9e882ec85b3db131b56b37384b5b3bdf997f0091e",
+      "sizeBytes": 952518,
+      "filename": "verify-auth/index.mjs"
+    }
+  }
+}
