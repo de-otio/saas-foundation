@@ -123,6 +123,64 @@ describe("PiiFilter — immutability", () => {
   });
 });
 
+describe("PiiFilter — idempotency (redact twice == redact once)", () => {
+  it("redacting an already-redacted payload yields an identical result (default strategy)", () => {
+    const f = new PiiFilter();
+    const input = {
+      password: "hunter2",
+      keep: "ok",
+      nested: { token: "abc", arr: [{ secret: "s" }, { plain: 1 }] },
+    };
+    const once = f.apply(input);
+    const twice = f.apply(once as Record<string, JsonValue>);
+    expect(twice).toEqual(once);
+    // And the sensitive values really are the sentinel, not the original.
+    expect((once as Record<string, JsonValue>)["password"]).toBe("[REDACTED]");
+  });
+
+  it("idempotent under the drop strategy (second pass removes nothing new)", () => {
+    const f = new PiiFilter({ strategy: "drop" });
+    const input = { password: "x", keep: "y", nested: { token: "t", ok: "z" } };
+    const once = f.apply(input);
+    const twice = f.apply(once as Record<string, JsonValue>);
+    expect(twice).toEqual(once);
+    expect(once).not.toHaveProperty("password");
+  });
+
+  it("property: apply(apply(x)) === apply(x) for arbitrary nested JSON", () => {
+    const f = new PiiFilter();
+    const valueArb: fc.Arbitrary<JsonValue> = fc.letrec((tie) => ({
+      json: fc.oneof(
+        { depthSize: "small" },
+        fc.string(),
+        fc.integer(),
+        fc.boolean(),
+        fc.constant(null),
+        fc.array(tie("json") as fc.Arbitrary<JsonValue>, { maxLength: 3 }),
+        fc.dictionary(
+          // Bias the key space toward known PII keys so redaction actually fires.
+          fc.oneof(fc.constantFrom(...DEFAULT_PII_KEYS), fc.string({ minLength: 1, maxLength: 8 })),
+          tie("json") as fc.Arbitrary<JsonValue>,
+          { maxKeys: 4 },
+        ),
+      ),
+    })).json as fc.Arbitrary<JsonValue>;
+    const objArb = fc.dictionary(
+      fc.oneof(fc.constantFrom(...DEFAULT_PII_KEYS), fc.string({ minLength: 1, maxLength: 8 })),
+      valueArb,
+      { maxKeys: 5 },
+    );
+    fc.assert(
+      fc.property(objArb, (obj) => {
+        const once = f.apply(obj);
+        const twice = f.apply(once as Record<string, JsonValue>);
+        expect(twice).toEqual(once);
+      }),
+      { numRuns: 300, seed: 0xc0ffee },
+    );
+  });
+});
+
 describe("PiiFilter — property based", () => {
   it("a key matching the default denylist is always redacted, no matter the depth", () => {
     const f = new PiiFilter();

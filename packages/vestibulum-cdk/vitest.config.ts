@@ -39,8 +39,29 @@ export default defineConfig({
         // Cost-pillar S4 — S3 lifecycle defaults
         "lib/_internal/s3-lifecycle.ts",
         "lib/magic-link-auth-site/magic-link-auth-site.ts",
+        // Behaviour-bearing internals and constructs (added when the
+        // check-coverage-include gate flagged them as missing from the
+        // allow-list — see scripts/ci/check-coverage-include.ts).
+        "lib/_internal/branding.ts",
+        "lib/_internal/package-root.ts",
+        "lib/_internal/runtime-env.ts",
+        "lib/edge-resources/edge-resources.ts",
+        "lib/edge-resources/cross-region.ts",
+        "lib/edge-resources/waf-defaults.ts",
+        "lib/magic-link-auth-site/auth-verify-paths.ts",
+        "lib/magic-link-auth-site/ses-validation.ts",
+        "lib/shared-distribution-identity/admin-lambda.ts",
+        "lib/shared-distribution-identity/reconciler.ts",
       ],
-      exclude: ["lib/**/*.d.ts", "lib/**/index.ts"],
+      // edge-handle.ts and identity-handle.ts are interface-only (zero
+      // runtime code), so they are excluded by design rather than
+      // coverage-gated — the gate treats them as a documented decision.
+      exclude: [
+        "lib/**/*.d.ts",
+        "lib/**/index.ts",
+        "lib/_internal/edge-handle.ts",
+        "lib/_internal/identity-handle.ts",
+      ],
     },
     pool: "threads",
     poolOptions: { threads: { maxThreads: 4, minThreads: 2 } },

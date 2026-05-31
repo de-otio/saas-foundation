@@ -90,6 +90,58 @@ describe("computeConsumeResult — unit tests", () => {
     expect(result.allowed).toBe(true);
     expect(result.retryAfter).toBeUndefined();
   });
+
+  it("off-by-one BOTH directions at the exact boundary (cost == tokens allowed, cost == tokens+1 denied)", () => {
+    // The window boundary in both directions: with exactly `tokens` available,
+    // a request costing exactly that many is ALLOWED (boundary inclusive), and
+    // one costing a single token more is DENIED.
+    const state: BucketState = { tokens: 4, lastRefillMs: T0 };
+    const exact = computeConsumeResult(state, T0, 4, DEFAULT_CONFIG);
+    expect(exact.result.allowed).toBe(true);
+    expect(exact.result.remaining).toBe(0);
+
+    const oneOver = computeConsumeResult(state, T0, 5, DEFAULT_CONFIG);
+    expect(oneOver.result.allowed).toBe(false);
+    expect(oneOver.result.retryAfter).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("computeConsumeResult — clock-manipulation evasion", () => {
+  // The threat (06 § Rate-limit and cost-DoS evasion): the limiter must not
+  // be evadable by manipulating the clock value in the request. The refill
+  // uses `Math.max(0, nowMs - lastRefillMs)`, so a backwards clock grants no
+  // refill, and an exhausted bucket cannot be flipped to "allowed" by
+  // supplying an earlier timestamp.
+
+  it("a backwards clock (now < lastRefill) grants ZERO refill — cannot mint tokens", () => {
+    // Bucket nearly empty, last refilled at T0. An attacker supplies a time
+    // BEFORE the last refill. Elapsed clamps to 0, so tokens stay at 0.5 and
+    // a cost-1 request is denied — no token resurrection.
+    const state: BucketState = { tokens: 0.5, lastRefillMs: T0 };
+    const { result, newState } = computeConsumeResult(state, T0 - 1_000_000, 1, DEFAULT_CONFIG);
+    expect(result.allowed).toBe(false);
+    // Tokens must not have grown (no negative-elapsed bonus).
+    expect(newState.tokens).toBeLessThanOrEqual(0.5);
+  });
+
+  it("an exhausted bucket cannot be re-allowed by replaying an earlier timestamp", () => {
+    // Drain to empty at T0.
+    const drained: BucketState = { tokens: 0, lastRefillMs: T0 };
+    // Replay a timestamp 10 minutes in the past.
+    const replay = computeConsumeResult(drained, T0 - 600_000, 1, DEFAULT_CONFIG);
+    expect(replay.result.allowed).toBe(false);
+    expect(replay.newState.tokens).toBe(0);
+  });
+
+  it("a far-future clock still caps tokens at capacity (no unbounded accrual)", () => {
+    const drained: BucketState = { tokens: 0, lastRefillMs: T0 };
+    // 1e9 ms in the future; at refillRate 1/s that would be 1e6 tokens
+    // uncapped. Must clamp to capacity.
+    const { newState } = computeConsumeResult(drained, T0 + 1_000_000_000, 1, DEFAULT_CONFIG);
+    expect(newState.tokens).toBeLessThanOrEqual(DEFAULT_CONFIG.capacity);
+    // After consuming 1 from a full (capped) bucket: capacity - 1.
+    expect(newState.tokens).toBeCloseTo(DEFAULT_CONFIG.capacity - 1);
+  });
 });
 
 describe("computePeekResult — unit tests", () => {

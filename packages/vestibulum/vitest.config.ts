@@ -13,12 +13,21 @@ export default defineConfig({
         functions: 80,
         branches: 80,
         statements: 80,
+        // Frozen-type brand checkers hold the cross-package invariant.
+        // The 95% floor is ENFORCED here (not just a convention) per the
+        // P1 acceptance criteria.
+        "**/src/types/frozen/**": {
+          lines: 95,
+          functions: 95,
+          branches: 95,
+          statements: 95,
+        },
       },
       include: ["src/**/*.ts"],
       // Note: frozen-type brand checkers under src/types/frozen/ are
       // explicitly INCLUDED in coverage — they hold the cross-package
-      // invariant and require ≥ 95% line/branch coverage per the P1
-      // acceptance criteria.
+      // invariant. The ≥95% line/branch/function/statement floor is
+      // enforced via the glob threshold above.
       exclude: ["src/**/*.d.ts", "src/**/index.ts"],
     },
     pool: "threads",

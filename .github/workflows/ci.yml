@@ -82,3 +82,16 @@ jobs:
         env:
           GITHUB_BASE_REF: ${{ github.base_ref }}
         run: npx tsx scripts/ci/check-peerdep-ranges.ts
+
+      # Determinism gate: flag equality assertions applied directly to
+      # unordered iterables (Object.keys/values/entries, Map/Set spreads).
+      # Scans the working tree, not a diff. Suppress a genuine
+      # order-guaranteed case with a `// sorted-ok` comment.
+      - name: Unsorted-toEqual check
+        run: npx tsx scripts/ci/check-unsorted-toequal.ts
+
+      # Guards against coverage-include rot: fails if a behaviour-bearing
+      # vestibulum-cdk lib file is missing from the coverage `include`
+      # allow-list (and would therefore ship silently uncovered).
+      - name: Coverage-include check (vestibulum-cdk)
+        run: npx tsx scripts/ci/check-coverage-include.ts

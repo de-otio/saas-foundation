@@ -92,6 +92,12 @@ Read these in order on first pass.
   — how to stand up a minimal throwaway instance (the trellis API on
   the foundation) for end-to-end testing, including the multi-tenancy
   path. Honest about what infra exists vs. what you author.
+- [`test-strategy/`](test-strategy/) — the test strategy: what we test,
+  at which of the ten layers, with which tools, what gates a merge
+  (80% floor / 95% on frozen-set brand checkers), and what's
+  deliberately deferred (the integration tier). Per-package plans and
+  the security/abuse-test catalogue. Complements the determinism rules
+  in [`02-monorepo-layout.md`](02-monorepo-layout.md#test-framework).
 
 ## Per-package designs
 

@@ -130,6 +130,67 @@ describe('extractTenantSubdomain — edge cases', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Subdomain-confusion / spoofing (06 § Open-redirect / subdomain confusion):
+// an ambiguous or attacker-crafted Host must NOT resolve to a victim tenant.
+// ---------------------------------------------------------------------------
+
+describe('extractTenantSubdomain — spoofing must not resolve to a victim tenant', () => {
+  it('parent as a non-suffix substring (attacker-owned apex) → null', () => {
+    // The parent appears mid-string but the host ends in attacker.com. The
+    // `.endsWith('.'+parent)` boundary check must refuse it — otherwise an
+    // attacker domain would resolve to a victim tenant label.
+    expect(
+      extractTenantSubdomain('acme.tenants.example.com.attacker.com', PARENT),
+    ).toBeNull();
+  });
+
+  it('parent fused to the label with no dot boundary → null', () => {
+    // `acmetenants.example.com` is NOT `acme` under `tenants.example.com`:
+    // there is no `.` before the parent. A naive `endsWith(parent)` (without
+    // the leading dot) would mis-extract "acme"; the dotted suffix prevents it.
+    expect(extractTenantSubdomain('acmetenants.example.com', PARENT)).toBeNull();
+  });
+
+  it('a host that merely ends with the registrable domain but not the parent → null', () => {
+    expect(extractTenantSubdomain('acme.example.com', PARENT)).toBeNull();
+  });
+
+  it('embedded dot in the label region (sub.sub) → null, never the inner label', () => {
+    // Must not resolve to the victim "acme" by stripping a deeper prefix.
+    expect(extractTenantSubdomain('attacker.acme.tenants.example.com', PARENT)).toBeNull();
+  });
+
+  it('property: any host NOT ending in `.<parent>` never yields a non-null label', () => {
+    fc.assert(
+      fc.property(
+        fc.domain().filter((d) => !d.endsWith('.' + PARENT) && d !== PARENT),
+        (host) => {
+          expect(extractTenantSubdomain(host, PARENT)).toBeNull();
+        },
+      ),
+      RUN_OPTIONS,
+    );
+  });
+
+  it('property: a victim label embedded in a longer attacker host never extracts the victim', () => {
+    const victim = 'acme';
+    fc.assert(
+      fc.property(
+        // attacker apex distinct from the parent
+        fc.domain().filter((d) => !d.endsWith(PARENT)),
+        (attackerApex) => {
+          const spoof = `${victim}.${PARENT}.${attackerApex}`;
+          const result = extractTenantSubdomain(spoof, PARENT);
+          // It must never resolve to the victim label.
+          expect(result).not.toBe(victim);
+        },
+      ),
+      RUN_OPTIONS,
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Property tests
 // ---------------------------------------------------------------------------
 

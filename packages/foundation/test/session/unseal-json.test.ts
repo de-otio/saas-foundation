@@ -74,4 +74,41 @@ describe("unsealJson<T>(token, schema)", () => {
     const unsealed = await cookie.unsealJson("", SessionSchema);
     expect(unsealed).toBeNull();
   });
+
+  describe("expiry enforcement at the schema seam (injected clock)", () => {
+    // Session crypto is payload-opaque: expiry is the consumer's policy,
+    // enforced via a Zod refinement at the unseal seam. We pin that an
+    // expired payload is rejected and a still-valid one is accepted, using
+    // a FIXED injected "now" (no real Date — determinism rule P2).
+    const FIXED_NOW = 1_700_000_000;
+    const expiringSchema = (now: number) =>
+      SessionSchema.refine((s) => s.expiresAt > now, {
+        message: "session expired",
+        path: ["expiresAt"],
+      });
+
+    it("rejects a payload whose expiresAt is in the past (UnsealError)", async () => {
+      const expired: Session = { userId: "u1", role: "user", expiresAt: FIXED_NOW - 1 };
+      const sealed = await cookie.sealJson(expired);
+      await expect(
+        cookie.unsealJson(sealed, expiringSchema(FIXED_NOW)),
+      ).rejects.toBeInstanceOf(UnsealError);
+    });
+
+    it("rejects a payload that expires exactly at now (boundary, not in the future)", async () => {
+      const atBoundary: Session = { userId: "u1", role: "user", expiresAt: FIXED_NOW };
+      const sealed = await cookie.sealJson(atBoundary);
+      // expiresAt > now is false when equal → expired.
+      await expect(
+        cookie.unsealJson(sealed, expiringSchema(FIXED_NOW)),
+      ).rejects.toBeInstanceOf(UnsealError);
+    });
+
+    it("accepts a payload that is still valid (expiresAt in the future)", async () => {
+      const valid: Session = { userId: "u1", role: "admin", expiresAt: FIXED_NOW + 3600 };
+      const sealed = await cookie.sealJson(valid);
+      const unsealed = await cookie.unsealJson(sealed, expiringSchema(FIXED_NOW));
+      expect(unsealed).toEqual(valid);
+    });
+  });
 });

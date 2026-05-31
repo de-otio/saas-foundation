@@ -254,6 +254,8 @@ test suite — unit, snapshot, integration — observes the following:
 - **No sort-order-dependent assertions** on `Object.keys`,
   `Map.entries()`, set iteration, or unsorted DB queries. Sort
   explicitly before comparing, or use set-equality matchers.
+  The `check-unsorted-toequal` CI gate enforces a conservative subset
+  of this rule (see below).
 - **No real network or filesystem.** Mock at the AWS SDK or `fetch`
   boundary. Tests that genuinely need the network (LocalStack,
   integration tests against vestibulum-cdk synth output) live in a
@@ -268,9 +270,26 @@ test suite — unit, snapshot, integration — observes the following:
   indistinguishable from a real regression.
 
 These rules are enforced by ESLint (`no-restricted-globals` on
-`Date`/`Math.random` inside `test/`), by a CI lint that rejects
-`.toEqual([...unsorted...])` patterns on iterable output, and by
-review discipline for the snapshot-input rule.
+`Date`/`Math.random` inside `test/`), by the `check-unsorted-toequal`
+CI gate (see `scripts/ci/check-unsorted-toequal.ts`), and by review
+discipline for the snapshot-input rule.
+
+The CI gate is intentionally conservative to keep false positives near
+zero. It flags equality assertions (`.toEqual` / `.toStrictEqual`) that
+are applied **directly** to known-unordered iterables:
+
+- `expect(Object.keys(x)).toEqual(...)` — and the `.values` / `.entries`
+  variants. Chaining `.sort()` before the assertion (`Object.keys(x).sort()`)
+  is not flagged.
+- `expect([...x.keys()]).toEqual(...)` or `[...x.values()]` spreads.
+- `expect([...someSet]).toEqual(...)` where the variable name contains
+  "set" or "map" (case-insensitive heuristic).
+
+It does **not** attempt data-flow analysis on arbitrary array variables;
+that would produce noise. Escape hatch: a `// sorted-ok` comment on
+the assertion line or the line immediately above suppresses the finding
+when order is guaranteed by other means (e.g. the source is a sorted
+database query or a manually ordered literal).
 
 ## Linting and formatting
 

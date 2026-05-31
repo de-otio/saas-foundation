@@ -157,6 +157,24 @@ describe('verifyJwt', () => {
     ).rejects.toThrow();
   });
 
+  it('rejects a not-yet-valid token (nbf in the future, beyond skew)', async () => {
+    // nbf well beyond the clock-skew tolerance: a token minted for use
+    // later must not be accepted now. aws-jwt-verify honours nbf with the
+    // graceSeconds window; nbf = now + 1h is far outside the 60s skew.
+    const future = FIXED_NOW_SEC + 3600;
+    const token = signTestJwt(primary, {
+      claims: { nbf: future, iat: future, exp: future + 3600 },
+    });
+    await expect(
+      verifyJwt(token, {
+        issuer: TEST_ISSUER,
+        jwks: [primary.jwk],
+        algorithms: ['RS256'],
+        clockSkewSec: 60,
+      }),
+    ).rejects.toThrow();
+  });
+
   it('rejects bad signature (wrong key)', async () => {
     // Sign with `rotated`, but verify against `rotated.jwk` with the primary's kid.
     // Easiest is: take token from rotated, then verify against a JWKS that has

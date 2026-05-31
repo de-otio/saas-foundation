@@ -358,6 +358,89 @@ describe("MultiPoolVerifier.verify", () => {
       });
     });
 
+    // Headline cross-pool abuse: BOTH pools are registered. An attacker
+    // who holds a *valid* B2C token (signed by the real B2C key) crafts a
+    // token claiming the B2B issuer. select-by-iss routes to the B2B
+    // verifier, whose JWKS is the B2B key set — the B2C key/signature must
+    // fail there. The decisive, security-bearing assertion is that the
+    // token is REJECTED and NEVER admitted *as a B2B token* (a naive "try
+    // every verifier" impl would have admitted it under b2c). The B2C kid
+    // is absent from the B2B JWKS, so aws-jwt-verify rejects at key lookup;
+    // the mapped reason is one of the rejection reasons, never a resolve.
+    it("rejects a token signed by pool A's key but claiming pool B's iss (cross-pool forgery)", async () => {
+      const token = signJwt(b2cKey, {
+        // Claim the B2B issuer (a DIFFERENT, also-registered pool)...
+        iss: canonicalIssuer(B2B_REGION, B2B_POOL_ID),
+        clientId: B2B_CLIENT,
+        // ...but sign with the genuine B2C private key. kid is B2C's.
+        kid: b2cKey.jwk.kid,
+        signWith: b2cKey.privateKey,
+      });
+      const outcome = await verifier.verify(token).then(
+        (v) => ({ resolved: true as const, v }),
+        (e: unknown) => ({ resolved: false as const, e }),
+      );
+      // Must NOT resolve — in particular must not resolve as a B2B token.
+      expect(outcome.resolved).toBe(false);
+      if (!outcome.resolved) {
+        expect(outcome.e).toBeInstanceOf(MultiPoolVerifierError);
+        // Any rejection reason is acceptable; what is NOT acceptable is a
+        // resolve with poolKey "b2b". Pin that it is a genuine verification
+        // failure, not e.g. unknown_issuer (the iss IS a known pool here).
+        expect(["invalid_signature", "malformed_token"]).toContain(
+          (outcome.e as MultiPoolVerifierError).reason,
+        );
+      }
+    });
+
+    // Force the *true signature-mismatch* path: give both pools the SAME
+    // kid so the B2B verifier finds a key by kid and proceeds to the actual
+    // RSA signature check — which fails because the bytes were signed by
+    // B2C's private key. This isolates the signature defence from the
+    // kid-not-found path above. Pins reason === invalid_signature exactly.
+    it("rejects cross-pool forgery via true signature mismatch when kids collide (invalid_signature)", async () => {
+      const sharedKid = "shared-kid";
+      const b2cShared = makeKey(sharedKid);
+      const b2bShared = makeKey(sharedKid);
+      const v = buildPrimedVerifier(makeStandardPools(), {
+        [B2C_POOL_ID]: [b2cShared],
+        [B2B_POOL_ID]: [b2bShared],
+      });
+      // Sign with B2C's private key, claim B2B's issuer; header kid matches
+      // the (different-material) key registered under B2B's JWKS.
+      const token = signJwt(b2cShared, {
+        iss: canonicalIssuer(B2B_REGION, B2B_POOL_ID),
+        clientId: B2B_CLIENT,
+        kid: sharedKid,
+        signWith: b2cShared.privateKey,
+      });
+      await expect(v.verify(token)).rejects.toMatchObject({
+        reason: "invalid_signature",
+      });
+    });
+
+    // The mirror direction: B2B key signing a token that claims the B2C
+    // issuer. Routed to the B2C verifier, B2B's key/signature fails there.
+    it("rejects a token signed by pool B's key but claiming pool A's iss (cross-pool, reversed)", async () => {
+      const token = signJwt(b2bKey, {
+        iss: canonicalIssuer(B2C_REGION, B2C_POOL_ID),
+        clientId: B2C_CLIENT,
+        kid: b2bKey.jwk.kid,
+        signWith: b2bKey.privateKey,
+      });
+      const outcome = await verifier.verify(token).then(
+        () => ({ resolved: true as const }),
+        (e: unknown) => ({ resolved: false as const, e }),
+      );
+      expect(outcome.resolved).toBe(false);
+      if (!outcome.resolved) {
+        expect(outcome.e).toBeInstanceOf(MultiPoolVerifierError);
+        expect(["invalid_signature", "malformed_token"]).toContain(
+          (outcome.e as MultiPoolVerifierError).reason,
+        );
+      }
+    });
+
     it("rejects a token with unsupported alg with invalid_signature", async () => {
       const token = signJwt(b2cKey, {
         iss: canonicalIssuer(B2C_REGION, B2C_POOL_ID),

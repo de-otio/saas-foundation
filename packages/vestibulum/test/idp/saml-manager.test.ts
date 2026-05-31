@@ -160,6 +160,48 @@ describe("SamlIdpManager.upsert", () => {
     expect(cognitoMock.commandCalls(UpdateIdentityProviderCommand)).toHaveLength(0);
   });
 
+  it("REFUSES metadata whose signature was wrapping-attack-blocked (isSigned:false)", async () => {
+    // The parser marks a signature-wrapping attempt as isSigned:false with
+    // signatureStatus.kind === 'wrapping_attack_blocked'. The manager keys
+    // default-reject on isSigned, so a wrapped (attacker-subject) blob must
+    // be refused exactly like a plain unsigned one — and must NOT call
+    // Cognito. This pins the cross-link between the parser's wrapping
+    // defence and the manager's default-reject.
+    const manager = makeManager(async () =>
+      makeMetadata({
+        isSigned: false,
+        signatureStatus: { kind: "wrapping_attack_blocked" },
+        entityId: "https://attacker.example/saml",
+      }),
+    );
+    await expect(
+      manager.upsert({
+        tenantId: "acme",
+        metadata: { kind: "xml", xml: "<md:EntitiesDescriptor/>" },
+      }),
+    ).rejects.toMatchObject({ reason: "unsigned" });
+    expect(cognitoMock.commandCalls(CreateIdentityProviderCommand)).toHaveLength(0);
+    expect(cognitoMock.commandCalls(UpdateIdentityProviderCommand)).toHaveLength(0);
+  });
+
+  it("REFUSES metadata whose signature was tampered (invalid_signature -> isSigned:false)", async () => {
+    // Tampered metadata also collapses to isSigned:false; the manager must
+    // refuse it without touching Cognito.
+    const manager = makeManager(async () =>
+      makeMetadata({
+        isSigned: false,
+        signatureStatus: { kind: "invalid_signature" },
+      }),
+    );
+    await expect(
+      manager.upsert({
+        tenantId: "acme",
+        metadata: { kind: "xml", xml: "<md:EntityDescriptor/>" },
+      }),
+    ).rejects.toMatchObject({ reason: "unsigned" });
+    expect(cognitoMock.commandCalls(CreateIdentityProviderCommand)).toHaveLength(0);
+  });
+
   it("accepts unsigned metadata when acceptUnsignedMetadata: true", async () => {
     cognitoMock
       .on(DescribeIdentityProviderCommand)

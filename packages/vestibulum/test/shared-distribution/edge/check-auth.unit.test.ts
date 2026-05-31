@@ -254,6 +254,48 @@ describe('check-auth handler', () => {
     expect(r.status).toBe('403');
   });
 
+  it('refuses tenant A cookie at tenant B with the tenant-mismatch reason (not an incidental refuse)', async () => {
+    // The load-bearing cross-tenant gate. A token validly issued for tenant
+    // "acme" (good signature, good iss, token_use=id, present aud) presented
+    // on tenant "bob"'s host must be refused — AND refused for the structural
+    // binding reason, not an incidental one (e.g. no-aud). Capturing the
+    // emitted metric reason pins that the tenant-mismatch branch fired, so the
+    // test is not a tautology that any 403 would satisfy.
+    const reasons: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((line: unknown) => {
+      try {
+        const parsed = JSON.parse(String(line)) as { metric?: string; reason?: string };
+        if (
+          parsed.metric === 'Vestibulum/SharedDistribution/EdgeCheckRefused' &&
+          typeof parsed.reason === 'string' &&
+          parsed.reason.length > 0
+        ) {
+          reasons.push(parsed.reason);
+        }
+      } catch {
+        /* non-JSON log line; ignore */
+      }
+    });
+    // Token is fully valid for tenant "acme" (aud present, token_use id).
+    const token = signTestJwt(primary, {
+      claims: { 'custom:tenant_id': 'acme', aud: 'test-client-id' },
+    });
+    const r = asResult(
+      await handler(
+        makeEvent({
+          // ...but presented on tenant "bob"'s host.
+          host: 'bob.tenants.example.com',
+          cookie: `vestibulum_id_token=${token}`,
+        }),
+      ),
+    );
+    expect(r.status).toBe('403');
+    expect(reasons).toContain('tenant-mismatch');
+    // Must NOT have been admitted: a CloudFront pass-through returns the
+    // request (with a `method`), never a 403 response object.
+    expect((r as { method?: string }).method).toBeUndefined();
+  });
+
   it('refuses with no-aud when aud is missing', async () => {
     const token = signTestJwt(primary, {
       claims: { aud: undefined, 'custom:tenant_id': 'acme' },

@@ -105,19 +105,41 @@ describe('check-auth property tests', () => {
         fc.asyncProperty(
           fc.tuple(tenantIdArb, tenantIdArb).filter(([a, b]) => a !== b),
           async ([tenantA, tenantB]) => {
-            const token = signTestJwt(primary, {
-              claims: { 'custom:tenant_id': tenantA },
+            // The token is otherwise fully valid for tenantA (good signature,
+            // iss, token_use=id, aud present) — so the ONLY thing that can
+            // reject it at tenantB is the structural tenant binding. Capturing
+            // the refuse reason makes this non-tautological: a 403 from an
+            // incidental cause (e.g. no-aud) would NOT satisfy the assertion.
+            const reasons: string[] = [];
+            vi.spyOn(console, 'log').mockImplementation((line: unknown) => {
+              try {
+                const p = JSON.parse(String(line)) as { metric?: string; reason?: string };
+                if (
+                  p.metric === 'Vestibulum/SharedDistribution/EdgeCheckRefused' &&
+                  p.reason !== undefined
+                ) {
+                  reasons.push(p.reason);
+                }
+              } catch {
+                /* ignore non-JSON log lines */
+              }
             });
-            const r = asResult(
-              await handler(
-                makeEvent({
-                  host: `${tenantB}.tenants.example.com`,
-                  cookie: `vestibulum_id_token=${token}`,
-                }),
-              ),
+            const token = signTestJwt(primary, {
+              claims: { 'custom:tenant_id': tenantA, aud: 'test-client-id' },
+            });
+            const r = await handler(
+              makeEvent({
+                host: `${tenantB}.tenants.example.com`,
+                cookie: `vestibulum_id_token=${token}`,
+              }),
             );
-            // The gating assertion: any cross-tenant token MUST be refused (403).
-            expect(r.status).toBe('403');
+            // The gating assertion: any cross-tenant token MUST be refused (403)
+            // and MUST NOT be admitted as a pass-through (no `.method`).
+            expect(asResult(r).status).toBe('403');
+            expect((r as { method?: string }).method).toBeUndefined();
+            // And it must refuse for the structural-binding reason, not an
+            // incidental one.
+            expect(reasons).toContain('tenant-mismatch');
           },
         ),
         RUN_OPTIONS,
