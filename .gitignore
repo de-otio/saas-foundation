@@ -16,6 +16,12 @@ coverage/
 # Lambda bundles (generated at build time)
 lambda-bundles/
 
+# SAML test fixtures — regenerated on every run by the vitest globalSetup
+# (packages/vestibulum/test/fixtures/saml/build-fixtures.ts), signed with a
+# freshly-minted key, so the committed copies only churn. The generator and
+# its .pem inputs are the source of truth, not these artifacts.
+packages/vestibulum/test/fixtures/saml/*.xml
+
 # Environment files
 .env
 .env.*

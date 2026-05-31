@@ -88,26 +88,6 @@ Path to `1.0.0` is gated on the multi-tenancy boundary (P2 → P4 → P5)
 reaching a stable state and at least one consuming release cycle exercising
 the full dependency graph.
 
-### 1c. Pre-public confidentiality scrub — ⚠️ REQUIRED before going public
-
-This repo (and `trellis`) will be made public. A confidential consumer
-brand name was scrubbed from the **working tree** in this pass — docs and
-the three foundation-cdk source/test files now use `trellis` /
-`example.com`, verified by a repo-wide marker grep.
-**Still outstanding before flipping either repo public:**
-
-- **git history rewrite for `saas-foundation`** — the brand was committed
-  in earlier doc/source history; a working-tree scrub does not remove it
-  from history. Run a `git-filter-repo` pass (+ force-push + downstream
-  re-clone) on the brand before the repo is made public. Requires explicit
-  per-invocation confirmation; the orphan-commit message after the rewrite
-  must be neutral.
-- **`trellis`-side scrub** — `trellis` keeps its own repo name, but it
-  still references the same brand internally (e.g. the brand domain in the
-  Prisma schema / ActivityPub URIs, and code comments). Apply the same
-  working-tree-scrub + history-rewrite discipline to `trellis` before it
-  goes public.
-
 ### 2. `AdminLinkProviderForUser` empirical verification (second-review N3)
 
 Requires deploying a real Cognito user pool with an immutable custom

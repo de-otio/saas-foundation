@@ -49,7 +49,13 @@ describe('TtlCache — property tests (fast-check, seed 0xc0ffee)', () => {
         fc.integer({ min: 1, max: 100 }),
         fc.integer({ min: 2, max: 16 }),
         async (key, ttlMs, value, concurrency) => {
-          const cache = new TtlCache<number>({ ttlMs });
+          // Freeze the clock. With the real Date.now default and a generated
+          // ttlMs as small as 1 ms, a slow runner (coverage instrumentation)
+          // can cross the TTL between the synchronous getOrLoad calls below,
+          // forcing a second loader call — a wall-clock flake (seen in CI).
+          // A frozen clock keeps every call strictly within the TTL window,
+          // which is exactly the property under test.
+          const cache = new TtlCache<number>({ ttlMs, now: () => 1_000_000 });
           let callCount = 0;
           const loader = () => {
             callCount++;
