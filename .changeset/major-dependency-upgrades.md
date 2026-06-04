@@ -1,6 +1,6 @@
 ---
-"@de-otio/saas-foundation": major
-"@de-otio/vestibulum": major
+"@de-otio/saas-foundation": minor
+"@de-otio/vestibulum": minor
 "@de-otio/saas-foundation-cdk": patch
 "@de-otio/vestibulum-cdk": patch
 ---
