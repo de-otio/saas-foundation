@@ -23,9 +23,10 @@ const TERMINAL_ERROR_NAMES = new Set([
   "InvalidSignatureException",
 ]);
 
-function isTransientError(err: Error): boolean {
-  const name = (err as { name?: string }).name;
-  if (name !== undefined && name.length > 0 && TERMINAL_ERROR_NAMES.has(name)) return false;
+function isTransientError(err: unknown): boolean {
+  const name =
+    typeof err === "object" && err !== null ? (err as { name?: unknown }).name : undefined;
+  if (typeof name === "string" && name.length > 0 && TERMINAL_ERROR_NAMES.has(name)) return false;
   return true;
 }
 

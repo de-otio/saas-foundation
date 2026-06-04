@@ -171,13 +171,13 @@ export const TenantSubdomainSchema = z
  * Zod schema for `ClientConfigRow`. Validates the persisted DDB row shape.
  * Used by the admin Lambda when writing and reading from the ClientConfig table.
  *
- * Annotated with `z.ZodType<ClientConfigRow, ZodTypeDef, unknown>` to prevent
+ * Annotated with `z.ZodType<ClientConfigRow, unknown>` to prevent
  * TS4023 errors from the brand symbols leaking into the exported type while
  * keeping the output type accurate. The double-cast via `unknown` is required
  * because the input side of the Zod schema uses `string` for fields that the
  * output side narrows to branded types.
  */
-export const ClientConfigRowSchema: z.ZodType<ClientConfigRow, z.ZodTypeDef, unknown> =
+export const ClientConfigRowSchema: z.ZodType<ClientConfigRow, unknown> =
   z.object({
     clientId: z.string().min(1),
     subdomain: TenantSubdomainSchema,
@@ -193,4 +193,4 @@ export const ClientConfigRowSchema: z.ZodType<ClientConfigRow, z.ZodTypeDef, unk
     ),
     createdAt: z.string().datetime({ offset: true }),
     updatedAt: z.string().datetime({ offset: true }).optional(),
-  }) as unknown as z.ZodType<ClientConfigRow, z.ZodTypeDef, unknown>;
+  }) as unknown as z.ZodType<ClientConfigRow, unknown>;
