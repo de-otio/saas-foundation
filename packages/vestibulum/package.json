@@ -1,6 +1,6 @@
 {
   "name": "@de-otio/vestibulum",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "Identity runtime for de-otio SaaS backends (Cognito IdP managers, JWT verifier, Lambda trigger templates)",
   "license": "Apache-2.0",
@@ -47,7 +47,7 @@
     "fast-check": "^3.23.0"
   },
   "peerDependencies": {
-    "@de-otio/saas-foundation": "^0.2.0"
+    "@de-otio/saas-foundation": "^0.3.0"
   },
   "publishConfig": {
     "access": "public"
