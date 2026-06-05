@@ -1,6 +1,6 @@
 {
   "name": "@de-otio/saas-foundation-cdk",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "type": "module",
   "description": "AWS CDK constructs for de-otio SaaS deployment plumbing",
   "license": "Apache-2.0",
