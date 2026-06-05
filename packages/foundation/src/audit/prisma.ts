@@ -1,10 +1,11 @@
 /**
  * `PostgresAuditStore` — the Prisma-backed `AuditStore`.
  *
- * IMPORTANT: This file is the ONLY file under `src/audit/` permitted to
- * top-level `import { PrismaClient } from '@prisma/client'`. The
- * import-graph quarantine is what keeps `@prisma/client` an OPTIONAL
- * peer dependency in practice — see
+ * IMPORTANT: The `src/audit/` quarantine keeps `@prisma/client` an OPTIONAL
+ * peer dependency in practice — only this file is permitted to reference
+ * `@prisma/client` at all, and it does so purely through the structural
+ * `PrismaAuditClient` interface (no value-import; Prisma 7's bare package
+ * exports nothing without a generated client). See
  * `doc/foundation/01-package-api.md § Prisma sub-paths`.
  *
  * Consumers reach this file ONLY via the sub-path:
