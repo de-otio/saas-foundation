@@ -34,10 +34,11 @@
  * as "table not yet migrated" — returning `false` / empty list.
  */
 
-// IMPORTANT: this file is the ONLY file under src/feature-toggles/
-// permitted to top-level import `@prisma/client`. The ESLint rule in
-// `.eslintrc.cjs` enforces the quarantine on the rest of `src/feature-toggles/`.
-import { PrismaClient } from "@prisma/client";
+// This store operates purely against the structural `PrismaFeatureToggleClient`
+// interface — it does NOT value-import `@prisma/client` (Prisma 7's bare package
+// exports nothing without a generated client, and foundation has no schema).
+// The ESLint rule in `.eslintrc.cjs` still quarantines `@prisma/client` out of
+// the rest of `src/feature-toggles/`.
 
 import { getLogger } from "../logger/index.js";
 import type {
@@ -174,8 +175,6 @@ export class PrismaFeatureToggleStore implements FeatureToggleStore {
     this.prisma = prisma;
     this.cacheTtlMs = options.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
     this.cacheDisabled = options.cacheDisabled ?? false;
-    // Compile-time reference to keep the value import "used".
-    void PrismaClient;
   }
 
   public async isEnabled(key: string): Promise<boolean> {

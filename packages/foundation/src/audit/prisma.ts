@@ -32,16 +32,13 @@
  * design note for the recommended sweeper Lambda shape.
  */
 
-// IMPORTANT: this file is the ONLY file under src/audit/ permitted to
-// top-level import `@prisma/client`. The ESLint rule in
-// `.eslintrc.cjs` enforces the quarantine on the rest of `src/audit/`.
-// The runtime value-import below is intentional — it is the canary
-// that the sub-path quarantine is what keeps `@prisma/client`
-// optional. A consumer who never imports
-// `@de-otio/saas-foundation/audit/prisma` is never reachable through
-// this file at module-load time.
-import { PrismaClient } from "@prisma/client";
-
+// This store operates purely against the structural `PrismaAuditClient`
+// interface below — it does NOT value-import `@prisma/client`. Under Prisma 7
+// the bare `@prisma/client` exports nothing until a client is generated, and
+// foundation has no schema of its own; consumers pass their own generated
+// `PrismaClient` (or a mock), which is structurally assignable. The ESLint
+// rule in `.eslintrc.cjs` still keeps `@prisma/client` quarantined out of the
+// rest of `src/audit/`.
 import type { AuditEvent, AuditSeverity } from "../types/frozen/audit.js";
 import { AuditStoreError } from "./errors.js";
 import type { AuditStore } from "./store.js";
@@ -133,10 +130,6 @@ export class PostgresAuditStore implements AuditStore {
   public constructor(prisma: PrismaAuditClient, options: PostgresAuditStoreOptions = {}) {
     this.prisma = prisma;
     this.clock = options.clock ?? Date.now;
-    // Compile-time reference to keep the value import "used" — the
-    // PostgresAuditStore is constructed from a PrismaClient (or a
-    // structural mock thereof). Production calls pass new PrismaClient().
-    void PrismaClient;
   }
 
   public async put(event: AuditEvent, retentionSeconds: number): Promise<void> {
