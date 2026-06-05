@@ -1,10 +1,11 @@
 /**
  * `PrismaFeatureToggleStore` — the Prisma-backed `FeatureToggleStore`.
  *
- * IMPORTANT: This file is the ONLY file under `src/feature-toggles/`
- * permitted to top-level `import { PrismaClient } from '@prisma/client'`.
- * The import-graph quarantine is what keeps `@prisma/client` an OPTIONAL
- * peer dependency in practice — see
+ * IMPORTANT: The `src/feature-toggles/` quarantine keeps `@prisma/client` an
+ * OPTIONAL peer dependency in practice — only this file is permitted to
+ * reference `@prisma/client` at all, and it does so purely through the
+ * structural `PrismaFeatureToggleClient` interface (no value-import; Prisma 7's
+ * bare package exports nothing without a generated client). See
  * `doc/foundation/01-package-api.md § Prisma sub-paths`.
  *
  * Consumers reach this file ONLY via the sub-path:
