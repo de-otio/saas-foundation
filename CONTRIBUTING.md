@@ -73,6 +73,12 @@ a changeset (`npm run changeset`). The
 enforces this. PRs that change only docs, tests, or non-published
 files do not need a changeset.
 
+This repo follows the de-otio **trunk + tag-gated-release** standard,
+realised via Changesets (Version PR → publish + per-package tags on
+merge to `main`) rather than account deploys. See
+[`doc/deployment-alignment-plan.md`](doc/deployment-alignment-plan.md)
+for how the package-release flow maps onto that standard.
+
 ## Code style
 
 ### Required by tooling
