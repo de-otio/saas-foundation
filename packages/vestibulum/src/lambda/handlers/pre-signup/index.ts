@@ -34,7 +34,7 @@ type PreSignUpTriggerSource =
   | "PreSignUp_AdminCreateUser"
   | "PreSignUp_ExternalProvider"
   // Open string union — Cognito may add new trigger sources without notice.
-  // eslint-disable-next-line @typescript-eslint/ban-types
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   | (string & {});
 
 /** Cognito PreSignUp trigger event (minimal shape we need). */

@@ -51,7 +51,9 @@ describe("VestibulumChecks", () => {
     // but appear in the cloud assembly metadata.
     const assembly = app.synth();
     const messages = assembly.stacks[0]?.messages ?? [];
-    const nagMessages = messages.filter((m) => m.entry.data?.toString().includes("VST2"));
+    const nagMessages = messages.filter(
+      (m) => m.entry.data != null && JSON.stringify(m.entry.data).includes("VST2"),
+    );
     expect(nagMessages.length).toBeGreaterThan(0);
   });
 });

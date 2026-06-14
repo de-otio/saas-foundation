@@ -166,11 +166,11 @@ describe('createTenant — reservation', () => {
     }
 
     // Keys must be correct
-    const subdomainItem = items.find((i) =>
-      i.Put?.Item?.['key']?.S?.startsWith('subdomain#'),
+    const subdomainItem = items.find(
+      (i) => i.Put?.Item?.['key']?.S?.startsWith('subdomain#') === true,
     );
-    const tenantIdItem = items.find((i) =>
-      i.Put?.Item?.['key']?.S?.startsWith('tenantId#'),
+    const tenantIdItem = items.find(
+      (i) => i.Put?.Item?.['key']?.S?.startsWith('tenantId#') === true,
     );
     expect(subdomainItem?.Put?.Item?.['key']?.S).toBe('subdomain#acme');
     expect(tenantIdItem?.Put?.Item?.['key']?.S).toBe('tenantId#acme');

@@ -15,7 +15,7 @@
  * — calls do not share state.
  */
 
-import pino, { type Level as PinoLevel, type DestinationStream, type Logger as PinoLogger } from "pino";
+import pino, { type Level as PinoLevel, type DestinationStream } from "pino";
 import type { Logger } from "./logger.js";
 import { _replaceRootLoggerForTesting } from "./logger.js";
 
@@ -97,7 +97,7 @@ export function createTestLogCapture(
   let restoreFn: (() => void) | null = null;
 
   return {
-    logger: pinoLogger as unknown as Logger,
+    logger: pinoLogger,
     entries(): readonly LogRecord[] {
       // Defensive copy: callers cannot mutate the internal buffer.
       return buffer.slice();
@@ -107,7 +107,7 @@ export function createTestLogCapture(
     },
     installAsRoot(): void {
       if (restoreFn !== null) return;
-      restoreFn = _replaceRootLoggerForTesting(pinoLogger as unknown as PinoLogger);
+      restoreFn = _replaceRootLoggerForTesting(pinoLogger);
     },
     restore(): void {
       if (restoreFn === null) return;

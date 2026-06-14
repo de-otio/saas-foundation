@@ -39,7 +39,7 @@ export async function loadClientConfigByClientId(clientId: string): Promise<Clie
       Key: { clientId: { S: clientId } },
     }));
     if (!resp.Item) return null;
-    return parseRow(clientId, resp.Item as DdbItem);
+    return parseRow(clientId, resp.Item);
   });
 }
 

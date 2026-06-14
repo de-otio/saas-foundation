@@ -106,7 +106,7 @@ function parseCursor(
     const result = CursorKeySchema.safeParse(parsed);
     if (!result.success) return undefined;
 
-    return result.data as Record<string, unknown>;
+    return result.data;
   } catch {
     return undefined;
   }

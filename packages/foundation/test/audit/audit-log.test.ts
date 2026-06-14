@@ -39,7 +39,7 @@ function makeStore(opts: { fail?: Error } = {}): FakeStore {
       return Promise.resolve();
     },
   };
-  return Object.assign(store, { calls }) as FakeStore;
+  return Object.assign(store, { calls });
 }
 
 import type { Logger } from "../../src/logger/logger.js";
@@ -67,7 +67,7 @@ function makeLogger(): FakeLogger {
     __?: unknown,
   ) => {
     /* noop */
-  }) as never;
+  });
   const logger = {
     errors,
     warnings,

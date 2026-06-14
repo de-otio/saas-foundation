@@ -25,7 +25,7 @@ interface DdbTableResource {
 }
 
 function findDdbTables(template: Template): Record<string, DdbTableResource> {
-  return template.findResources("AWS::DynamoDB::Table") as Record<string, DdbTableResource>;
+  return template.findResources("AWS::DynamoDB::Table");
 }
 
 function makeStack(name: string): cdk.Stack {

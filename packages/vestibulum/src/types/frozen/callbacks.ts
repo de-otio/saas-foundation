@@ -89,7 +89,7 @@ export interface ClaimResolverInput {
   readonly userAttributes: Readonly<Record<string, string>>;
   readonly clientId: string;
   /** Open string union for forward compatibility with new trigger sources. */
-  // eslint-disable-next-line @typescript-eslint/ban-types -- intentional open-union sentinel
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- intentional open-union sentinel
   readonly triggerSource: KnownClaimTriggerSource | (string & {});
   readonly identity: CallbackIdentity;
   readonly federatedGroups: ReadonlyArray<string>;
@@ -133,7 +133,7 @@ export interface ProvisionerInput {
   readonly userAttributes: Readonly<Record<string, string>>;
   readonly clientId: string;
   /** Open string union for forward compatibility (e.g., SCIM provisioner paths). */
-  // eslint-disable-next-line @typescript-eslint/ban-types -- intentional open-union sentinel
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- intentional open-union sentinel
   readonly triggerSource: KnownProvisionerSource | (string & {});
   readonly identity: CallbackIdentity;
 }

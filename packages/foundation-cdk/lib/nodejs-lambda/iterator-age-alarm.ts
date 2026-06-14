@@ -42,7 +42,7 @@ export function addQueueIteratorAgeAlarm(
   // IFunction is always also an IConstruct (IFunction extends IResource
   // extends IConstruct); fall back to the queue's scope if the type
   // narrowing ever fails (defensive).
-  const scope: Construct = Construct.isConstruct(fn) ? fn : (queue as unknown as Construct);
+  const scope: Construct = Construct.isConstruct(fn) ? fn : (queue);
   // Suffix the construct id with the queue's node id to keep multiple
   // iterator-age alarms (one per consumed queue) unique under the same
   // function scope.

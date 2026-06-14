@@ -53,8 +53,8 @@ function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
  * A fetchImpl that returns a fixed Response.
  */
 function fixedFetch(response: Response | (() => Response)): typeof fetch {
-  return (async () =>
-    typeof response === "function" ? response() : response) as unknown as typeof fetch;
+  return async () =>
+    typeof response === "function" ? response() : response;
 }
 
 /**

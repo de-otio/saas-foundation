@@ -235,7 +235,7 @@ export function createMultiPoolVerifier(pools: ReadonlyArray<PoolConfig>): Multi
         const payload = await entry.verifier.verify(token);
         return {
           poolKey: entry.poolKey,
-          claims: payload as Readonly<Record<string, unknown>>,
+          claims: payload,
           rawToken: token,
         };
       } catch (err: unknown) {

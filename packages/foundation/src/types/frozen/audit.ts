@@ -43,7 +43,7 @@ export type AuditAction =
   | "data.create"
   | "data.update"
   | "data.delete"
-  // eslint-disable-next-line @typescript-eslint/ban-types -- intentional open-union sentinel
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- intentional open-union sentinel
   | (string & {});
 
 /** Closed: the four cases exhaust meaningful provenance. New kind requires RFC. */

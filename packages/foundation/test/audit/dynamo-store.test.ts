@@ -86,7 +86,7 @@ describe("DynamoAuditStore.put — happy path", () => {
     const store = new DynamoAuditStore(client, TABLE);
     const ev = { ...makeEvent() };
     delete (ev as { tenantId?: string }).tenantId;
-    await store.put(ev as AuditEvent, 3600);
+    await store.put(ev, 3600);
     const call = mock.commandCalls(PutItemCommand)[0]!;
     const item = unmarshall(call.args[0].input.Item!);
     expect(item["PK"]).toBe("AUDIT#_global");

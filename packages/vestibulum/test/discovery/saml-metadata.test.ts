@@ -634,7 +634,7 @@ describe("parseSamlMetadata — kind: url", () => {
       {
         resolveHostname: stubResolveTo([PUBLIC_IP]),
         fetchImpl: stubFetch(makeOkResponse(xml)) as unknown as typeof fetch,
-        dispatcherFactory: () => ({ close }) as unknown as Agent,
+        dispatcherFactory: () => ({ close }),
       },
     );
     expect(close).toHaveBeenCalledTimes(1);
@@ -651,7 +651,7 @@ describe("parseSamlMetadata — kind: url", () => {
         {
           resolveHostname: stubResolveTo([PUBLIC_IP]),
           fetchImpl: stubFetch(makeOkResponse(xml)) as unknown as typeof fetch,
-          dispatcherFactory: () => ({ close }) as unknown as Agent,
+          dispatcherFactory: () => ({ close }),
         },
       ),
     ).resolves.toBeDefined();

@@ -87,7 +87,7 @@ export class S3Storage implements R2Bucket {
             Expires: options.httpMetadata.cacheExpiry,
           }),
           ...(options?.customMetadata !== undefined && {
-            Metadata: options.customMetadata as Record<string, string>,
+            Metadata: options.customMetadata,
           }),
         }),
       ),

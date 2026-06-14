@@ -87,7 +87,7 @@ export interface ProvisionerInput {
   triggerSource:
     | "PostConfirmation_ConfirmSignUp"
     | "PostConfirmation_ConfirmForgotPassword"
-    // eslint-disable-next-line @typescript-eslint/ban-types -- open-union pattern
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- open-union pattern
     | (string & {});
   identity: Identity;
   /**

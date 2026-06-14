@@ -28,7 +28,7 @@ export function extractCallerIdentity(event: LambdaFunctionURLEvent): CallerIden
     callerId: iam?.userId ?? 'unknown',
   };
   if (iam) {
-    return { ...result, callerSessionContext: iam as Record<string, unknown> };
+    return { ...result, callerSessionContext: iam };
   }
   return result;
 }

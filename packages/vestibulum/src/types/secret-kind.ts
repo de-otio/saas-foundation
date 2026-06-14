@@ -7,5 +7,5 @@
  */
 export type SecretKind =
   | "oidc-client-secret"
-  // eslint-disable-next-line @typescript-eslint/ban-types
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   | (string & {});

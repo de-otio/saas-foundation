@@ -169,5 +169,5 @@ function verifyJwtSync_(
     throw new Error('verifyJwt: exp missing');
   }
 
-  return payload as Record<string, unknown>;
+  return payload;
 }

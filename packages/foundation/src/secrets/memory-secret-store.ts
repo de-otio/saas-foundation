@@ -87,7 +87,7 @@ function isSecretsCommand(command: unknown): command is SecretsCommandLike {
     typeof command === "object" &&
     command !== null &&
     "input" in command &&
-    typeof (command as { input: unknown }).input === "object"
+    typeof (command).input === "object"
   );
 }
 

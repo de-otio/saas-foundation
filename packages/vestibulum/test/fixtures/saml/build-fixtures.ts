@@ -208,7 +208,11 @@ function signXml(
     signatureAlgorithm: "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
     canonicalizationAlgorithm: "http://www.w3.org/2001/10/xml-exc-c14n#",
     getKeyInfoContent: ({ publicCert: pc }: { publicCert?: crypto.KeyLike }) => {
-      const b64 = pemToBase64Block(String(pc ?? ""));
+      // pc is a KeyLike (string | Buffer | KeyObject); the fixture always
+      // passes a PEM string or Buffer. Narrow explicitly so we never call
+      // the default Object stringification on a KeyObject.
+      const pem = typeof pc === "string" ? pc : Buffer.isBuffer(pc) ? pc.toString("utf8") : "";
+      const b64 = pemToBase64Block(pem);
       return `<X509Data><X509Certificate>${b64}</X509Certificate></X509Data>`;
     },
   });

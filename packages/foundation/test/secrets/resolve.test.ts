@@ -206,7 +206,7 @@ describe("resolveSecret", () => {
   }, 20_000);
 
   it("classifies an unknown thrown value (non-Error) as the base SecretsResolveError", async () => {
-    secretsMock.on(GetSecretValueCommand).rejects("not-an-error" as unknown as Error);
+    secretsMock.on(GetSecretValueCommand).rejects("not-an-error");
     const ctx = makeContext();
     await expect(resolveSecret(secretRef(TEST_ARN), ctx)).rejects.toBeInstanceOf(
       SecretsResolveError,

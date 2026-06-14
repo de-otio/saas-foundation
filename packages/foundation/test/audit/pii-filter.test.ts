@@ -132,7 +132,7 @@ describe("PiiFilter — idempotency (redact twice == redact once)", () => {
       nested: { token: "abc", arr: [{ secret: "s" }, { plain: 1 }] },
     };
     const once = f.apply(input);
-    const twice = f.apply(once as Record<string, JsonValue>);
+    const twice = f.apply(once);
     expect(twice).toEqual(once);
     // And the sensitive values really are the sentinel, not the original.
     expect((once as Record<string, JsonValue>)["password"]).toBe("[REDACTED]");
@@ -142,7 +142,7 @@ describe("PiiFilter — idempotency (redact twice == redact once)", () => {
     const f = new PiiFilter({ strategy: "drop" });
     const input = { password: "x", keep: "y", nested: { token: "t", ok: "z" } };
     const once = f.apply(input);
-    const twice = f.apply(once as Record<string, JsonValue>);
+    const twice = f.apply(once);
     expect(twice).toEqual(once);
     expect(once).not.toHaveProperty("password");
   });
@@ -164,7 +164,7 @@ describe("PiiFilter — idempotency (redact twice == redact once)", () => {
           { maxKeys: 4 },
         ),
       ),
-    })).json as fc.Arbitrary<JsonValue>;
+    })).json;
     const objArb = fc.dictionary(
       fc.oneof(fc.constantFrom(...DEFAULT_PII_KEYS), fc.string({ minLength: 1, maxLength: 8 })),
       valueArb,
@@ -173,7 +173,7 @@ describe("PiiFilter — idempotency (redact twice == redact once)", () => {
     fc.assert(
       fc.property(objArb, (obj) => {
         const once = f.apply(obj);
-        const twice = f.apply(once as Record<string, JsonValue>);
+        const twice = f.apply(once);
         expect(twice).toEqual(once);
       }),
       { numRuns: 300, seed: 0xc0ffee },
@@ -202,7 +202,7 @@ describe("PiiFilter — property based", () => {
           },
         ),
       ),
-    })).json as fc.Arbitrary<JsonValue>;
+    })).json;
 
     // Generate a random nested object with one path that contains a PII
     // key at a known depth; assert the value at that key is redacted.

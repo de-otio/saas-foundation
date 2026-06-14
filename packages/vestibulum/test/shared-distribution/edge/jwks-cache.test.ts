@@ -49,7 +49,7 @@ function makeFetcher(responses: Array<Awaited<ReturnType<JwksFetcher>>>): {
     get calls() {
       return state.calls;
     },
-  } as { fetcher: JwksFetcher; calls: number };
+  };
 }
 
 function jwksJson(keys: Array<Record<string, unknown>>): string {

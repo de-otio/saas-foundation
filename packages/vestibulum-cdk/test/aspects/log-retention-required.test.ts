@@ -30,7 +30,7 @@ function makeStackWithLambdaAndLogGroup(
   if (retentionDays !== undefined) {
     new logs.LogGroup(root, constructId, {
       logGroupName: lgName,
-      retention: retentionDays as logs.RetentionDays,
+      retention: retentionDays,
       removalPolicy: undefined as never,
     });
   } else {

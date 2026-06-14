@@ -15,6 +15,15 @@ updates:
       interval: weekly
     open-pull-requests-limit: 10
     groups:
+      # @typescript-eslint/parser and /eslint-plugin are a matched pair —
+      # the plugin's peer dependency pins the parser to the same major, so a
+      # parser-only bump can never install (npm ci ERESOLVE). Group them
+      # across ALL update types (including major) so they always move
+      # together in one PR. Listed first: a dependency lands in the first
+      # group it matches, so this wins over npm-minor-patch for these two.
+      typescript-eslint:
+        patterns:
+          - "@typescript-eslint/*"
       npm-minor-patch:
         update-types:
           - minor

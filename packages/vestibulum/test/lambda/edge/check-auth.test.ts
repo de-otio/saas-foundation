@@ -275,7 +275,7 @@ describe("single-tenant edge check-auth", () => {
   });
 
   it("redirects on a malformed event with no Records[0]", async () => {
-    const r = await handler({ Records: [] } as unknown as CloudFrontRequestEvent);
+    const r = await handler({ Records: [] });
     expect(isLoginRedirect(r)).toBe(true);
   });
 

@@ -369,7 +369,7 @@ describe('check-auth handler', () => {
 
   it('handles malformed event with no Records[0]', async () => {
     const r = asResult(
-      await handler({ Records: [] } as unknown as CloudFrontRequestEvent),
+      await handler({ Records: [] }),
     );
     expect(r.status).toBe('400');
   });

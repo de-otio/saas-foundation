@@ -99,7 +99,7 @@ describe("PostgresAuditStore.put — happy path", () => {
     const store = new PostgresAuditStore(client);
     const ev = { ...makeEvent() };
     delete (ev as { tenantId?: string }).tenantId;
-    await store.put(ev as AuditEvent, 3600);
+    await store.put(ev, 3600);
     const data = calls[0]!.data;
     expect(data.tenantId).toBeNull();
     expect(data.resourceKind).toBeNull();

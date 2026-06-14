@@ -144,7 +144,7 @@ describe("HouseDefaultsAspect — raw Lambda", () => {
     // The raw function should warn; the NodejsLambda should not.
     expect(warnings.length).toBeGreaterThan(0);
     for (const w of warnings) {
-      expect(String(w.entry.data)).not.toContain("HouseFn");
+      expect(JSON.stringify(w.entry.data)).not.toContain("HouseFn");
     }
   });
 });
@@ -286,7 +286,7 @@ describe("HouseDefaultsAspect — raw SQS queue without DLQ", () => {
     // Filter to ensure the main queue path is not in the warnings.
     for (const w of warnings) {
       // The main queue path contains "Queue" but not "Dlq" at the end.
-      const data = String(w.entry.data);
+      const data = JSON.stringify(w.entry.data);
       expect(data).not.toMatch(/AspectQueueWithDlqStack\/HouseQueue\/Queue /);
     }
   });

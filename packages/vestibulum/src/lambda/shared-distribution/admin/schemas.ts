@@ -56,8 +56,7 @@ export interface CreateTenantRequest {
   readonly idempotencyKey: string;
 }
 
-export const CreateTenantRequestSchema: z.ZodType<CreateTenantRequest, unknown> = (
-  z
+export const CreateTenantRequestSchema: z.ZodType<CreateTenantRequest, unknown> = z
     .object({
       action: z.literal('createTenant'),
       subdomain: TenantSubdomainSchema,
@@ -65,8 +64,7 @@ export const CreateTenantRequestSchema: z.ZodType<CreateTenantRequest, unknown> 
       allowedEmailDomains: z.array(EmailDomainSchema),
       idempotencyKey: IdempotencyKeySchema,
     })
-    .strict() as unknown
-) as z.ZodType<CreateTenantRequest, unknown>;
+    .strict();
 
 export interface CreateTenantResponse {
   readonly tenantId: string;
@@ -91,15 +89,13 @@ export interface UpdateTenantRequest {
   readonly allowedEmailDomains: readonly string[];
 }
 
-export const UpdateTenantRequestSchema: z.ZodType<UpdateTenantRequest, unknown> = (
-  z
+export const UpdateTenantRequestSchema: z.ZodType<UpdateTenantRequest, unknown> = z
     .object({
       action: z.literal('updateTenant'),
       tenantId: TenantIdSchema,
       allowedEmailDomains: z.array(EmailDomainSchema),
     })
-    .strict() as unknown
-) as z.ZodType<UpdateTenantRequest, unknown>;
+    .strict();
 
 export interface UpdateTenantResponse {
   readonly tenantId: string;
@@ -116,15 +112,13 @@ export interface DeleteTenantRequest {
   readonly revokeActiveSessions?: boolean | undefined;
 }
 
-export const DeleteTenantRequestSchema: z.ZodType<DeleteTenantRequest, unknown> = (
-  z
+export const DeleteTenantRequestSchema: z.ZodType<DeleteTenantRequest, unknown> = z
     .object({
       action: z.literal('deleteTenant'),
       tenantId: TenantIdSchema,
       revokeActiveSessions: z.boolean().optional(),
     })
-    .strict() as unknown
-) as z.ZodType<DeleteTenantRequest, unknown>;
+    .strict();
 
 // ---------------------------------------------------------------------------
 // getTenant
@@ -135,14 +129,12 @@ export interface GetTenantRequest {
   readonly tenantId: TenantId;
 }
 
-export const GetTenantRequestSchema: z.ZodType<GetTenantRequest, unknown> = (
-  z
+export const GetTenantRequestSchema: z.ZodType<GetTenantRequest, unknown> = z
     .object({
       action: z.literal('getTenant'),
       tenantId: TenantIdSchema,
     })
-    .strict() as unknown
-) as z.ZodType<GetTenantRequest, unknown>;
+    .strict();
 
 // ---------------------------------------------------------------------------
 // listTenants
@@ -154,15 +146,13 @@ export interface ListTenantsRequest {
   readonly limit?: number | undefined;
 }
 
-export const ListTenantsRequestSchema: z.ZodType<ListTenantsRequest, unknown> = (
-  z
+export const ListTenantsRequestSchema: z.ZodType<ListTenantsRequest, unknown> = z
     .object({
       action: z.literal('listTenants'),
       cursor: z.string().optional(),
       limit: z.number().int().positive().max(100).optional(),
     })
-    .strict() as unknown
-) as z.ZodType<ListTenantsRequest, unknown>;
+    .strict();
 
 // ---------------------------------------------------------------------------
 // Discriminated union — the root request schema
@@ -186,12 +176,10 @@ export type AdminRequest =
  * union must also be typed loosely to avoid TS inference depth errors with
  * the brand symbols.
  */
-export const AdminRequestSchema: z.ZodType<AdminRequest, unknown> = (
-  z.discriminatedUnion('action', [
+export const AdminRequestSchema: z.ZodType<AdminRequest, unknown> = z.discriminatedUnion('action', [
     z.object({ action: z.literal('createTenant'), subdomain: TenantSubdomainSchema, tenantId: TenantIdSchema, allowedEmailDomains: z.array(EmailDomainSchema), idempotencyKey: IdempotencyKeySchema }).strict(),
     z.object({ action: z.literal('updateTenant'), tenantId: TenantIdSchema, allowedEmailDomains: z.array(EmailDomainSchema) }).strict(),
     z.object({ action: z.literal('deleteTenant'), tenantId: TenantIdSchema, revokeActiveSessions: z.boolean().optional() }).strict(),
     z.object({ action: z.literal('getTenant'), tenantId: TenantIdSchema }).strict(),
     z.object({ action: z.literal('listTenants'), cursor: z.string().optional(), limit: z.number().int().positive().max(100).optional() }).strict(),
-  ]) as unknown
-) as z.ZodType<AdminRequest, unknown>;
+  ]);

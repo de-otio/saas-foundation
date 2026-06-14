@@ -49,15 +49,15 @@ interface CertResource {
 }
 
 function findDdbTables(template: Template): Record<string, DdbTableResource> {
-  return template.findResources("AWS::DynamoDB::Table") as Record<string, DdbTableResource>;
+  return template.findResources("AWS::DynamoDB::Table");
 }
 
 function findCognitoPools(template: Template): Record<string, CognitoPoolResource> {
-  return template.findResources("AWS::Cognito::UserPool") as Record<string, CognitoPoolResource>;
+  return template.findResources("AWS::Cognito::UserPool");
 }
 
 function findCerts(template: Template): Record<string, CertResource> {
-  return template.findResources("AWS::CertificateManager::Certificate") as Record<string, CertResource>;
+  return template.findResources("AWS::CertificateManager::Certificate");
 }
 
 function makeStack(name: string): cdk.Stack {

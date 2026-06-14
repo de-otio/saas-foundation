@@ -59,7 +59,7 @@ function makeLogger(): FakeLogger {
     __?: unknown,
   ) => {
     /* noop */
-  }) as never;
+  });
   const logger = {
     errors,
     error: err,

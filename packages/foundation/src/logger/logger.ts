@@ -156,7 +156,7 @@ export function getAttachedLogger(obj: object): Logger | null {
 export function attachLoggerToContext(draft: object, bindings: Record<string, unknown>): void {
   const child = getRootLogger().child(bindings);
   Object.defineProperty(draft, LOGGER_KEY, {
-    value: child as unknown as Logger,
+    value: child,
     enumerable: false,
     writable: false,
     configurable: false,
@@ -199,7 +199,7 @@ export function getLogger(): Logger {
       }
     }
   }
-  return getRootLogger() as unknown as Logger;
+  return getRootLogger();
 }
 
 /**
@@ -209,7 +209,7 @@ export function getLogger(): Logger {
  * Impure: reads root logger state.
  */
 export function createLogger(bindings: Record<string, unknown>): Logger {
-  return getRootLogger().child(bindings) as unknown as Logger;
+  return getRootLogger().child(bindings);
 }
 
 // ---------------------------------------------------------------------------

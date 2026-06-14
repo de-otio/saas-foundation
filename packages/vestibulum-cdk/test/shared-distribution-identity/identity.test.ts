@@ -38,11 +38,11 @@ interface LambdaUrlResource {
 }
 
 function findDdbTables(template: Template): Record<string, DdbTableResource> {
-  return template.findResources("AWS::DynamoDB::Table") as Record<string, DdbTableResource>;
+  return template.findResources("AWS::DynamoDB::Table");
 }
 
 function findLambdaUrls(template: Template): Record<string, LambdaUrlResource> {
-  return template.findResources("AWS::Lambda::Url") as Record<string, LambdaUrlResource>;
+  return template.findResources("AWS::Lambda::Url");
 }
 
 function makeConsumerFn(scope: cdk.Stack, id: string): lambda.Function {

@@ -100,6 +100,9 @@ export class MemoryTokenBucketLimiter {
 
       return Promise.resolve(result);
     } catch (err) {
+      // Re-propagate the original caught error unchanged; its type is
+      // `unknown` here and the rule cannot prove it is an Error.
+      // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
       return Promise.reject(err);
     }
   }

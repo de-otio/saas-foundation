@@ -12,7 +12,6 @@ import { RESERVED_CLAIMS } from "../../src/types/reserved-claims.js";
 import type {
   ClaimResolver,
   ClaimResolverInput,
-  ClaimResolverOutput,
 } from "../../src/callbacks/types.js";
 
 function v1Event(overrides: Partial<PreTokenGenerationV1Event> = {}): PreTokenGenerationV1Event {
@@ -225,7 +224,7 @@ describe("createPreTokenGenerationHandler — reserved claim guard", () => {
         resolveClaims: async () =>
           ({
             claimsToAddOrOverride: { [reserved]: "evil" },
-          }) as ClaimResolverOutput,
+          }),
       });
       const event = v1Event();
       await expect(handler(event)).rejects.toBeInstanceOf(ReservedClaimError);
