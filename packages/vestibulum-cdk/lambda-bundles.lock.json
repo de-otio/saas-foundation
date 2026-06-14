@@ -2,7 +2,7 @@
   "vestibulumVersion": "0.3.0",
   "bundles": {
     "admin": {
-      "sha256": "sha256:0ee9d33966a0e5a634abada5330a04b3a9002d6dd9391e2710e74ccf32431d35",
+      "sha256": "sha256:6da9f3d012b6d5e3c894ac3adf42b3cc998d204a68f3b50dc3881c54bcf0034a",
       "sizeBytes": 343607,
       "filename": "admin/index.mjs"
     },
