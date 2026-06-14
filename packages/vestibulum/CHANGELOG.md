@@ -1,5 +1,13 @@
 # @de-otio/vestibulum
 
+## 0.3.1
+
+### Patch Changes
+
+- Upgrade the `undici` runtime dependency from 7 to 8. No API or behaviour
+  change in vestibulum itself; consumers receive the updated transitive
+  dependency.
+
 ## 0.3.0
 
 ### Minor Changes

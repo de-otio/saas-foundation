@@ -1,5 +1,13 @@
 # @de-otio/vestibulum-cdk
 
+## 0.3.3
+
+### Patch Changes
+
+- Rebuild the shipped Lambda bundles with esbuild 0.28 (from 0.21) and refresh
+  the committed bundle lock for vestibulum 0.3.1. Functionally equivalent
+  bundles; no construct API change.
+
 ## 0.3.1
 
 ### Patch Changes
