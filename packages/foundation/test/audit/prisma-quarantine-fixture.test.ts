@@ -48,5 +48,8 @@ describe("audit/prisma quarantine: ESLint fixture", () => {
       (m) => m.ruleId === "no-restricted-imports" && /@prisma\/client/.test(m.message),
     );
     expect(hasRestrictedImport).toBe(true);
-  });
+    // Spawning type-aware ESLint over the full program is slow (~4-5s);
+    // give the test the same budget the spawnSync call already allows so it
+    // doesn't hit vitest's 5s default under parallel load.
+  }, 60_000);
 });

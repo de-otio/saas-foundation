@@ -38,7 +38,7 @@ export async function deriveKey(
   secret: string,
   salt: string,
   iterations: number = DEFAULT_PBKDF2_ITERATIONS,
-): Promise<CryptoKey> {
+): Promise<webcrypto.CryptoKey> {
   const secretBytes = new TextEncoder().encode(secret);
   const saltBytes = new TextEncoder().encode(salt);
   const baseKey = await SUBTLE.importKey("raw", secretBytes, { name: "PBKDF2" }, false, [
