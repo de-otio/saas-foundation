@@ -1,5 +1,18 @@
 # Contributing
 
+> **This project is not currently accepting external contributions.**
+> Due to time constraints, the author is not taking external pull
+> requests or issue reports right now. The repository is public for
+> **inspection** — so its design and code can be read, learned from,
+> forked, and reused under the [license](LICENSE) — not as an open call
+> for changes. Unsolicited PRs and issues may go unreviewed and be
+> closed without response; please don't read that as hostility, only as
+> a reflection of available time.
+>
+> The conventions below describe how the project is maintained
+> *internally* (by the author, with AI agents under human review). They
+> are kept public for transparency and may be useful if you fork it.
+
 This repo is built and maintained primarily by AI agents under human
 review. The conventions here exist because the human review *is* the
 verification step — choices that reduce per-review cost compound

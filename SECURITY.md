@@ -13,8 +13,12 @@ is released.
 If you cannot use that mechanism, email **security@de-otio.org**.
 
 Please include enough detail to reproduce the issue (affected package and
-version, a minimal proof of concept, and the impact you have in mind). We
-aim to acknowledge reports within a few business days.
+version, a minimal proof of concept, and the impact you have in mind).
+
+This project is published mainly for inspection and is maintained on a
+best-effort basis under time constraints, so security reports are handled
+as time permits — acknowledgement may take a while. Reports are still
+welcome and read; please just don't expect a same-week turnaround.
 
 ## Supported versions
 

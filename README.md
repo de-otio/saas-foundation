@@ -7,6 +7,13 @@ SaaS backend built in the de-otio house. A monorepo of four
 published packages chosen because each one gets re-typed by hand
 every time a new backend starts.
 
+> **Published for inspection, not for contributions.** This repository
+> is public so its design and code can be read, learned from, forked,
+> and reused under the [license](LICENSE). It is **not** currently
+> accepting external pull requests or issue reports — the author
+> maintains it on a best-effort basis under time constraints. See
+> [`CONTRIBUTING.md`](CONTRIBUTING.md) for what that means in practice.
+
 ## Status
 
 **Implemented.** All four packages are built, typecheck across the
