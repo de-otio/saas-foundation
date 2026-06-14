@@ -1,0 +1,29 @@
+{
+  "name": "shared-distribution-example",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Example CDK app demonstrating SharedDistributionIdentity (multi-tenant shared-pool topology).",
+  "scripts": {
+    "build": "tsc",
+    "synth": "cdk synth",
+    "deploy": "cdk deploy",
+    "destroy": "cdk destroy"
+  },
+  "dependencies": {
+    "@de-otio/saas-foundation": "file:../../packages/foundation",
+    "@de-otio/saas-foundation-cdk": "file:../../packages/foundation-cdk",
+    "@de-otio/vestibulum": "file:../../packages/vestibulum",
+    "@de-otio/vestibulum-cdk": "file:../../packages/vestibulum-cdk",
+    "aws-cdk-lib": "^2.200.0",
+    "cdk-nag": "^2.0.0",
+    "constructs": "^10.0.0",
+    "source-map-support": "^0.5.21"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "aws-cdk": "^2.200.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0"
+  }
+}

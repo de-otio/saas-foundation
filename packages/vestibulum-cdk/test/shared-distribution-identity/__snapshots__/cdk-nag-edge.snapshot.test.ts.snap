@@ -1,0 +1,33 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`P2b cdk-nag snapshot > snapshots the cdk-nag findings for CloudFront + Edge + WAF 1`] = `
+[
+  {
+    "entry": {
+      "data": "AwsSolutions-COG1: The Cognito user pool does not have a password policy that minimally specify a password length of at least 8 characters, as well as requiring uppercase, numeric, and special characters.
+",
+      "type": "aws:cdk:error",
+    },
+    "id": "/P2bNagStack/TestUserPool/Resource",
+    "level": "error",
+  },
+  {
+    "entry": {
+      "data": "AwsSolutions-COG2: The Cognito user pool does not require MFA.
+",
+      "type": "aws:cdk:warning",
+    },
+    "id": "/P2bNagStack/TestUserPool/Resource",
+    "level": "warning",
+  },
+  {
+    "entry": {
+      "data": "AwsSolutions-COG8: The Cognito user pool is not on the plus tier / feature plan.
+",
+      "type": "aws:cdk:error",
+    },
+    "id": "/P2bNagStack/TestUserPool/Resource",
+    "level": "error",
+  },
+]
+`;

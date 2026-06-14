@@ -1,0 +1,10 @@
+{
+  "docSearch.docGlob": "doc/**/*.md",
+  "docSearch.indexDir": ".doc-search-index",
+  "docSearch.headingDepth": 2,
+  "docSearch.maxChunkChars": 4000,
+  "docSearch.embedProvider": "ollama",
+  "docSearch.ollamaUrl": "http://localhost:11434",
+  "docSearch.ollamaModel": "nomic-embed-text",
+  "docSearch.autoReindex": true
+}

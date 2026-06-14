@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./lib",
+    "types": ["node"]
+  },
+  "include": ["lib/**/*"],
+  "references": [{ "path": "../foundation-cdk" }]
+}

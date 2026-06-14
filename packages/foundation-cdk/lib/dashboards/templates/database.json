@@ -1,0 +1,166 @@
+{
+  "widgets": [
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 0,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "DynamoDB Read Capacity (Base Table)",
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "${REGION}",
+        "metrics": [
+          [
+            "AWS/DynamoDB",
+            "ConsumedReadCapacityUnits",
+            "TableName",
+            "${TABLE_NAME}",
+            { "stat": "Sum", "period": 60, "label": "Base table RCU" }
+          ]
+        ],
+        "yAxis": { "left": { "min": 0 } }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12,
+      "y": 0,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "DynamoDB Write Capacity (Base Table)",
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "${REGION}",
+        "metrics": [
+          [
+            "AWS/DynamoDB",
+            "ConsumedWriteCapacityUnits",
+            "TableName",
+            "${TABLE_NAME}",
+            { "stat": "Sum", "period": 60, "label": "Base table WCU" }
+          ]
+        ],
+        "yAxis": { "left": { "min": 0 } }
+      }
+    },
+    {
+      "_optional": "${GSI1_NAME}",
+      "type": "metric",
+      "x": 0,
+      "y": 6,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "DynamoDB GSI1 Read Capacity",
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "${REGION}",
+        "metrics": [
+          [
+            "AWS/DynamoDB",
+            "ConsumedReadCapacityUnits",
+            "TableName",
+            "${TABLE_NAME}",
+            "GlobalSecondaryIndexName",
+            "${GSI1_NAME}",
+            { "stat": "Sum", "period": 60, "label": "GSI1 RCU" }
+          ]
+        ],
+        "yAxis": { "left": { "min": 0 } }
+      }
+    },
+    {
+      "_optional": "${GSI1_NAME}",
+      "type": "metric",
+      "x": 12,
+      "y": 6,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "DynamoDB GSI1 Write Capacity",
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "${REGION}",
+        "metrics": [
+          [
+            "AWS/DynamoDB",
+            "ConsumedWriteCapacityUnits",
+            "TableName",
+            "${TABLE_NAME}",
+            "GlobalSecondaryIndexName",
+            "${GSI1_NAME}",
+            { "stat": "Sum", "period": 60, "label": "GSI1 WCU" }
+          ]
+        ],
+        "yAxis": { "left": { "min": 0 } }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 12,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "DynamoDB Throttled Requests",
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "${REGION}",
+        "metrics": [
+          [
+            "AWS/DynamoDB",
+            "ReadThrottleEvents",
+            "TableName",
+            "${TABLE_NAME}",
+            { "stat": "Sum", "period": 60, "label": "Read throttles", "color": "#ff7f0e" }
+          ],
+          [
+            "AWS/DynamoDB",
+            "WriteThrottleEvents",
+            "TableName",
+            "${TABLE_NAME}",
+            { "stat": "Sum", "period": 60, "label": "Write throttles", "color": "#d62728" }
+          ]
+        ],
+        "yAxis": { "left": { "min": 0 } }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12,
+      "y": 12,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "DynamoDB Successful Request Latency",
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "${REGION}",
+        "metrics": [
+          [
+            "AWS/DynamoDB",
+            "SuccessfulRequestLatency",
+            "TableName",
+            "${TABLE_NAME}",
+            "Operation",
+            "GetItem",
+            { "stat": "p99", "period": 60, "label": "GetItem p99" }
+          ],
+          [
+            "AWS/DynamoDB",
+            "SuccessfulRequestLatency",
+            "TableName",
+            "${TABLE_NAME}",
+            "Operation",
+            "Query",
+            { "stat": "p99", "period": 60, "label": "Query p99" }
+          ]
+        ],
+        "yAxis": { "left": { "min": 0 } }
+      }
+    }
+  ]
+}

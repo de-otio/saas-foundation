@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sign In</title>
+    <link rel="stylesheet" href="login.css" />
+  </head>
+  <body>
+    <main class="login-container">
+      <div class="login-card">
+        <h1>Sign In</h1>
+        <form id="login-form">
+          <div class="form-group">
+            <label for="email">Email Address</label>
+            <input
+              type="email"
+              id="email"
+              name="email"
+              required
+              autocomplete="email"
+              placeholder="you@example.com"
+            />
+          </div>
+          <button type="submit" class="submit-button">Send Magic Link</button>
+        </form>
+        <div id="error-message" class="error-message" role="status" aria-live="polite"></div>
+        <div id="success-message" class="success-message" role="status" aria-live="polite"></div>
+      </div>
+    </main>
+    <script src="login.js"></script>
+  </body>
+</html>

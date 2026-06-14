@@ -1,0 +1,57 @@
+{
+  "name": "@de-otio/vestibulum-cdk",
+  "version": "0.3.1",
+  "type": "module",
+  "description": "AWS CDK constructs for the magic-link auth topology (Cognito CUSTOM_AUTH, CloudFront, Lambda@Edge)",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/de-otio/saas-foundation.git",
+    "directory": "packages/vestibulum-cdk"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "lambda-bundles",
+    "lambda-bundles.lock.json",
+    "scripts/build-bundles.js",
+    "scripts/verify-bundles.js",
+    "scripts/lambda-entries",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "build-bundles": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/build-bundles.ts",
+    "verify-bundles": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/verify-bundles.ts",
+    "test": "vitest run",
+    "lint": "eslint lib test scripts"
+  },
+  "peerDependencies": {
+    "aws-cdk-lib": "^2.200.0",
+    "cdk-nag": "^2.0.0",
+    "constructs": "^10.0.0"
+  },
+  "devDependencies": {
+    "@de-otio/vestibulum": "*",
+    "@types/node": "^22.0.0",
+    "aws-cdk-lib": "^2.200.0",
+    "cdk-nag": "^2.0.0",
+    "constructs": "^10.0.0",
+    "esbuild": "0.21.5"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

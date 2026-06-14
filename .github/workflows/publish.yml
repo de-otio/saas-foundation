@@ -1,0 +1,132 @@
+name: Release
+
+# Single-workflow release pipeline (see doc/05-versioning-and-releases.md).
+#
+# THE FILE NAME IS LOAD-BEARING. npm Trusted Publishing binds each package's
+# trusted publisher to this repo + this workflow file path
+# (.github/workflows/publish.yml). Renaming the file means re-configuring the
+# trusted publisher on npmjs.com for all four packages.
+#
+# After CI succeeds on a push to main (see the workflow_run trigger below),
+# changesets/action does exactly one of two things:
+#   - Unreleased changesets present  → open / refresh the "Version Packages"
+#     PR (bumps versions, writes CHANGELOGs, deletes the consumed changesets).
+#     Nothing is published on this path.
+#   - No changesets (the Version PR has just merged) → run `changeset publish`,
+#     which publishes every package whose version is not yet on npm, then
+#     creates the per-package git tags (`@de-otio/<pkg>@<version>` — the
+#     changesets default, scoped) and GitHub releases.
+#
+# Publishing uses npm Trusted Publishing (OIDC) — NO NPM_TOKEN. Per the
+# CLAUDE.md npm-OIDC gotchas (all load-bearing):
+#   - Node 24 required (Trusted Publishing needs npm >= 11.5.1; Node 22 ships
+#     npm 10 and fails with a misleading 404). .nvmrc pins 24.
+#   - registry-url MUST be set on setup-node.
+#   - DO NOT set NODE_AUTH_TOKEN — it silently disables OIDC.
+#   - --provenance (NPM_CONFIG_PROVENANCE) requires a PUBLIC repo; on a private
+#     repo it 422s. It is enabled conditionally below, so going public later
+#     needs no workflow change.
+#
+# PREREQUISITE (one-time, on npmjs.com): configure a Trusted Publisher for
+# each of @de-otio/saas-foundation, @de-otio/vestibulum,
+# @de-otio/saas-foundation-cdk, @de-otio/vestibulum-cdk pointing at
+# repo `de-otio/saas-foundation` + workflow `.github/workflows/publish.yml`.
+# For the first publish (package does not yet exist), use npm's pending /
+# granular trusted-publisher setup. Until this is done, `changeset publish`
+# fails with ENEEDAUTH.
+
+# Gated on CI: this runs only after the CI workflow completes on main, and the
+# job below is skipped unless that CI run *succeeded* (and was a push to main,
+# not a PR build). Previously this triggered directly on `push: [main]`
+# independently of CI, so a release could publish even when CI failed. The file
+# name is still .github/workflows/publish.yml, so the npm Trusted Publishing
+# binding (repo + workflow file path) is unaffected by the trigger change.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+concurrency: ${{ github.workflow }}-${{ github.event.workflow_run.head_branch }}
+
+# Opt into the Node 24 runtime for JavaScript actions ahead of the
+# 2026-06-02 deadline when GitHub flips the default. Removes the
+# "Node.js 20 actions are deprecated" warning from every run.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  release:
+    name: Version or publish packages
+    runs-on: ubuntu-latest
+    # Only proceed when the triggering CI run SUCCEEDED and was a push to main.
+    # workflow_run also fires for failed CI and for CI on pull_request builds;
+    # both are filtered out here so a failed CI never publishes.
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push'
+    permissions:
+      contents: write # commit the Version PR, push tags, create GitHub releases
+      pull-requests: write # open / update the Version Packages PR
+      id-token: write # npm Trusted Publishing (OIDC)
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Check out the exact commit CI validated (workflow_run defaults to
+          # the branch tip, which is normally the same, but pinning the SHA is
+          # correct and race-free).
+          ref: ${{ github.event.workflow_run.head_sha }}
+          # Full history + tags so `changeset publish` dedupes already-released
+          # versions and `changeset tag` skips existing tags.
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          # registry-url is REQUIRED for npm Trusted Publishing (OIDC).
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # dist/ is gitignored and `changeset publish` packs whatever is on disk,
+      # so build first. Topological build: foundation → foundation-cdk →
+      # vestibulum → vestibulum-cdk.
+      - name: Build packages
+        run: npm run build
+
+      # vestibulum-cdk ships its Lambda bundles in the tarball (package.json
+      # `files` includes "lambda-bundles"), but they are gitignored build
+      # artifacts. Build them after dist/ exists (the bundler resolves
+      # @de-otio/vestibulum against its built dist/index.js), then verify they
+      # match the committed lock manifest before anything is published.
+      - name: Build Lambda bundles (vestibulum-cdk)
+        run: npm run build-bundles --workspace=@de-otio/vestibulum-cdk
+
+      - name: Verify Lambda bundles (vestibulum-cdk)
+        run: npm run verify-bundles --workspace=@de-otio/vestibulum-cdk
+
+      # --provenance requires a public source repo; on a private repo npm 422s.
+      # Enable it only when the repo is public at release time.
+      - name: Enable npm provenance on public repos
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [[ "$(gh repo view --json visibility -q '.visibility')" == "PUBLIC" ]]; then
+            echo "NPM_CONFIG_PROVENANCE=true" >> "$GITHUB_ENV"
+          fi
+
+      - name: Create Version PR or publish
+        uses: changesets/action@v1
+        with:
+          version: npm run version # changeset version: bump + write CHANGELOGs
+          publish: npm run release # changeset publish: OIDC publish + tags + GH releases
+          title: "chore(release): version packages"
+          commit: "chore(release): version packages"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # DO NOT set NODE_AUTH_TOKEN here — it disables OIDC Trusted Publishing.

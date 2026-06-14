@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false
+  },
+  "include": ["lib/**/*", "test/**/*", "vitest.config.ts"],
+  "exclude": ["test/eslint-fixtures/**", "node_modules", "dist"]
+}
