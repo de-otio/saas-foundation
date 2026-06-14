@@ -199,15 +199,18 @@ describe('extractTenantSubdomain — property tests', () => {
   const validLabel = (): fc.Arbitrary<string> =>
     fc
       .tuple(
-        fc.stringOf(fc.constantFrom(...'abcdefghijklmnopqrstuvwxyz'.split('')), {
+        fc.string({
+          unit: fc.constantFrom(...'abcdefghijklmnopqrstuvwxyz'.split('')),
           minLength: 1,
           maxLength: 1,
         }),
-        fc.stringOf(
-          fc.constantFrom(...'abcdefghijklmnopqrstuvwxyz0123456789-'.split('')),
-          { minLength: 1, maxLength: 61 },
-        ),
-        fc.stringOf(fc.constantFrom(...'abcdefghijklmnopqrstuvwxyz0123456789'.split('')), {
+        fc.string({
+          unit: fc.constantFrom(...'abcdefghijklmnopqrstuvwxyz0123456789-'.split('')),
+          minLength: 1,
+          maxLength: 61,
+        }),
+        fc.string({
+          unit: fc.constantFrom(...'abcdefghijklmnopqrstuvwxyz0123456789'.split('')),
           minLength: 1,
           maxLength: 1,
         }),

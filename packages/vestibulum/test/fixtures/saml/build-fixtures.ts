@@ -145,7 +145,7 @@ function ensureKeyPair(): { privateKey: string; publicCert: string } {
   const { privateKey, publicKey } = crypto.generateKeyPairSync("rsa", {
     modulusLength: 2048,
   });
-  const privateKeyPem = privateKey.export({ type: "pkcs8", format: "pem" }) as string;
+  const privateKeyPem = privateKey.export({ type: "pkcs8", format: "pem" });
   const cert = selfSignedCert(privateKey, publicKey, {
     notBefore: "2020-01-01T00:00:00Z",
     notAfter: "2099-01-01T00:00:00Z",

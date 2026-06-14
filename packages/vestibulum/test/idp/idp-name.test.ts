@@ -209,7 +209,7 @@ describe("normaliseIdpName — property: every input is Cognito-safe and ≤32 c
 
   it("returns a Cognito-regex-valid name for full-Unicode input", () => {
     fc.assert(
-      fc.property(fc.fullUnicodeString({ minLength: 0, maxLength: 200 }), (input) => {
+      fc.property(fc.string({ unit: "grapheme", minLength: 0, maxLength: 200 }), (input) => {
         const out = normaliseIdpName(input, EMPTY);
         expectCognitoSafe(out);
       }),
@@ -218,7 +218,7 @@ describe("normaliseIdpName — property: every input is Cognito-safe and ≤32 c
 
   it('always begins with "tenant-"', () => {
     fc.assert(
-      fc.property(fc.fullUnicodeString({ minLength: 0, maxLength: 200 }), (input) => {
+      fc.property(fc.string({ unit: "grapheme", minLength: 0, maxLength: 200 }), (input) => {
         const out = normaliseIdpName(input, EMPTY);
         expect(out.startsWith("tenant-")).toBe(true);
       }),
@@ -227,7 +227,7 @@ describe("normaliseIdpName — property: every input is Cognito-safe and ≤32 c
 
   it("never contains uppercase characters", () => {
     fc.assert(
-      fc.property(fc.fullUnicodeString({ minLength: 0, maxLength: 200 }), (input) => {
+      fc.property(fc.string({ unit: "grapheme", minLength: 0, maxLength: 200 }), (input) => {
         const out = normaliseIdpName(input, EMPTY);
         expect(out).toBe(out.toLowerCase());
       }),
@@ -236,7 +236,7 @@ describe("normaliseIdpName — property: every input is Cognito-safe and ≤32 c
 
   it("produces deterministic output for the same input", () => {
     fc.assert(
-      fc.property(fc.fullUnicodeString({ minLength: 0, maxLength: 200 }), (input) => {
+      fc.property(fc.string({ unit: "grapheme", minLength: 0, maxLength: 200 }), (input) => {
         expect(normaliseIdpName(input, EMPTY)).toBe(normaliseIdpName(input, EMPTY));
       }),
     );
