@@ -9,6 +9,15 @@ on:
   push:
     branches: [main]
 
+# Don't waste runner minutes on superseded runs. A new push to the same PR
+# cancels the PR's in-progress run (the common case: iterating on a branch,
+# or Dependabot force-pushing a rebase). Pushes to main are NOT cancelled —
+# each commit on the default branch gets its own full, independent
+# validation, so the branch is never left with an aborted check.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 # Opt into the Node 24 runtime for JavaScript actions ahead of the
 # 2026-06-02 deadline when GitHub flips the default. Removes the
 # "Node.js 20 actions are deprecated" warning from every run.
