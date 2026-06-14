@@ -3,10 +3,16 @@
  * Build the ten Lambda bundles shipped in `@de-otio/vestibulum-cdk`.
  *
  * Reads the entry wrappers from `scripts/lambda-entries/`, runs esbuild
- * with deterministic options, hashes each output, and writes the lock
- * manifest `lambda-bundles.lock.json`. The output directory
- * `lambda-bundles/<name>/index.mjs` is gitignored; the lock file is
- * committed (it is the cross-version contract).
+ * with deterministic options, and hashes each output. The output
+ * directory `lambda-bundles/<name>/index.mjs` is gitignored; the lock
+ * file `lambda-bundles.lock.json` is committed (it is the cross-version
+ * contract and the input to the `verify-bundles` gate).
+ *
+ * By default this only materialises the gitignored artifacts and leaves
+ * the committed lock untouched — so an ordinary build can never silently
+ * invalidate the `verify-bundles` gate. Pass `--write-lock` (via
+ * `npm run update-bundles-lock`) to deliberately regenerate the committed
+ * lock when the bundles legitimately change, then commit it.
  *
  * See `doc/vestibulum-cdk/10-lambda-bundle-pipeline.md` for the full
  * design rationale (deterministic-output rules, L@E specifics,
@@ -225,10 +231,29 @@ export async function buildAllBundles(outDirOverride?: string): Promise<BundleLo
 }
 
 /**
- * CLI entry point: build all bundles and write the lock manifest.
+ * CLI entry point: build all bundles (materialise `lambda-bundles/`).
+ *
+ * The committed lock is only rewritten when `--write-lock` is passed —
+ * never as a side effect of an ordinary build. CI builds the artifacts it
+ * needs for packing/synth WITHOUT the flag, leaving the committed lock
+ * intact so `verify-bundles` compares a fresh build against it (rather
+ * than against a copy this script just overwrote). Regenerate the lock
+ * deliberately with `npm run update-bundles-lock` and commit the result.
  */
 async function main(): Promise<void> {
+  const writeLock = process.argv.includes("--write-lock");
   const manifest = await buildAllBundles();
+  const count = Object.keys(manifest.bundles).length;
+
+  if (!writeLock) {
+    // eslint-disable-next-line no-console
+    console.log(
+      `@de-otio/vestibulum-cdk: built ${count} bundles ` +
+        `(committed lock unchanged; pass --write-lock to regenerate)`,
+    );
+    return;
+  }
+
   // Determinism: sort the bundles map by key so the JSON output is
   // byte-stable across runs (object insertion order varies across Node
   // versions in theory; sorting fixes it in practice).
@@ -246,7 +271,7 @@ async function main(): Promise<void> {
   };
   await writeFile(LOCK_PATH, JSON.stringify(sortedManifest, null, 2) + "\n", "utf8");
   // eslint-disable-next-line no-console
-  console.log(`@de-otio/vestibulum-cdk: built ${Object.keys(sortedBundles).length} bundles`);
+  console.log(`@de-otio/vestibulum-cdk: built ${count} bundles and regenerated the committed lock`);
 }
 
 /**

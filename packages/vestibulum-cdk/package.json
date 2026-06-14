@@ -34,6 +34,7 @@
     "build": "tsc -b",
     "typecheck": "tsc -b",
     "build-bundles": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/build-bundles.ts",
+    "update-bundles-lock": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/build-bundles.ts --write-lock",
     "verify-bundles": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/verify-bundles.ts",
     "test": "vitest run",
     "lint": "eslint lib test scripts"
