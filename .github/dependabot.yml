@@ -1,0 +1,31 @@
+# Dependabot version updates. Security updates (for known vulnerabilities)
+# are enabled separately at the repo level and do not require config here.
+#
+# This is an npm workspaces monorepo with a single root lockfile, so one
+# npm entry at "/" covers every package under packages/*. Minor and patch
+# bumps are grouped into a single PR to cut noise; major bumps open their
+# own PR so a human reviews the (potentially breaking) change. The
+# dependabot-auto-merge workflow auto-merges only the patch/minor PRs once
+# the required CI check passes.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      npm-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      github-actions:
+        patterns:
+          - "*"

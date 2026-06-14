@@ -1,0 +1,37 @@
+name: Dependabot auto-merge
+
+# Auto-merge Dependabot PRs once the required status check passes.
+#
+# Branch protection on `main` requires the "Build, typecheck, test, lint"
+# check (run by ci.yml on every pull_request) and no human review, so
+# enabling auto-merge here lets a green PR merge itself. Only patch and
+# minor updates auto-merge; major bumps are left open for manual review
+# because a passing test suite does not prove a breaking change is safe.
+#
+# `on: pull_request` runs in the PR's context; GitHub grants Dependabot-
+# triggered runs the permissions declared below and exposes the default
+# GITHUB_TOKEN (custom secrets remain unavailable, which is fine here).
+
+on: pull_request
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    steps:
+      - name: Fetch Dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@v2
+
+      - name: Enable auto-merge for patch & minor updates
+        if: >-
+          steps.meta.outputs.update-type == 'version-update:semver-patch' ||
+          steps.meta.outputs.update-type == 'version-update:semver-minor'
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
