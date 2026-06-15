@@ -1,5 +1,19 @@
 # @de-otio/vestibulum-cdk
 
+## 0.3.12
+
+### Patch Changes
+
+- Set `VESTIBULUM_DOMAIN` on the `MagicLinkIdentity` trigger Lambdas. The
+  CreateAuthChallenge handler builds the magic-link URL
+  (`https://<domain>/login/callback#token=...`) from `VESTIBULUM_DOMAIN`, but the
+  construct never set it, so the handler threw and Cognito returned the generic
+  `UserLambdaValidationException: CreateAuthChallenge failed with error
+Authentication failed` — magic-link sign-in could not issue a challenge. It is
+  now defaulted to the SES sender apex (which equals the front-door domain in the
+  apex-aligned topology and must match the `domain` passed to
+  `MagicLinkAuthSite`, which serves `/login/callback`).
+
 ## 0.3.11
 
 ### Patch Changes

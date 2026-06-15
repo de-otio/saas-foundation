@@ -145,6 +145,10 @@ const RuntimeEnv = {
   ALLOWED_EMAIL_DOMAINS: "VESTIBULUM_ALLOWED_EMAIL_DOMAINS",
   SIGNUP_MODE: "VESTIBULUM_SIGNUP_MODE",
   BOUNCE_HMAC_SECRET: "VESTIBULUM_BOUNCE_HMAC_SECRET",
+  // Front-door domain the magic-link URL points at (CreateAuthChallenge builds
+  // `https://<domain>/login/callback#token=...`). Must match MagicLinkAuthSite's
+  // `domain`. Consumed by the create-auth and auth-verify handlers.
+  DOMAIN: "VESTIBULUM_DOMAIN",
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -687,6 +691,15 @@ export class MagicLinkIdentity extends Construct {
       [RuntimeEnv.DENYLIST_TABLE_NAME]: this.denylistTable.tableName,
       [RuntimeEnv.SES_FROM]: props.sesIdentitySender,
       [RuntimeEnv.SES_REGION]: Stack.of(this).region,
+      // VESTIBULUM_DOMAIN — the front-door domain the magic-link URL points at
+      // (`https://<domain>/login/callback#token=...`), built by the
+      // CreateAuthChallenge handler. Without it that handler throws and Cognito
+      // returns the generic "Authentication failed". This MUST equal the
+      // `domain` passed to MagicLinkAuthSite (which serves `/login/callback`).
+      // Defaulted to the SES sender apex, which equals the site domain in the
+      // apex-aligned topology; a consumer serving the site on a domain other
+      // than the sender apex must align the two.
+      [RuntimeEnv.DOMAIN]: senderDomain,
       [RuntimeEnv.TOKEN_TTL_MINUTES]: String(tokenTtlMinutes),
       [RuntimeEnv.TOKEN_SENDS_PER_WINDOW]: String(tokenSendsPerWindow),
       [RuntimeEnv.SIGN_UPS_PER_WINDOW]: String(signUpsPerWindow),
