@@ -205,6 +205,14 @@ export function createPreSignupHandler(deps: PreSignUpHandlerDeps = {}) {
       }
     }
 
+    // Passwordless magic-link: there is no password to verify, and possession
+    // of the emailed link proves email ownership. So confirm the user and mark
+    // the email verified at sign-up — otherwise the user stays UNCONFIRMED and
+    // the first RespondToAuthChallenge fails with UserNotConfirmedException
+    // (the magic-link CUSTOM_AUTH flow can start but never complete).
+    event.response.autoConfirmUser = true;
+    event.response.autoVerifyEmail = true;
+
     return event;
   };
 }

@@ -42,8 +42,8 @@
       "filename": "post-confirmation/index.mjs"
     },
     "pre-signup": {
-      "sha256": "sha256:2a5c83a8c99694999bae5374edf07156fd74cc786b54a31564e521131f3039aa",
-      "sizeBytes": 1233779,
+      "sha256": "sha256:828e14f2c211e5da54bf84586adb3c58edd0656dcf6df74326d79433aad48a7a",
+      "sizeBytes": 1233839,
       "filename": "pre-signup/index.mjs"
     },
     "pre-token-generation": {

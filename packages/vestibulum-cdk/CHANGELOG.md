@@ -1,5 +1,18 @@
 # @de-otio/vestibulum-cdk
 
+## 0.3.15
+
+### Patch Changes
+
+- Auto-confirm magic-link sign-ups. The PreSignUp trigger validated the email
+  domain, signup mode, and rate limit but never set `autoConfirmUser` /
+  `autoVerifyEmail`, so the user stayed UNCONFIRMED. The passwordless CUSTOM_AUTH
+  flow could start (the magic-link email was sent) but the first
+  `RespondToAuthChallenge` failed with `UserNotConfirmedException` — sign-in could
+  never complete. PreSignUp now confirms the user and marks the email verified
+  once the allow-list/rate-limit/mode checks pass (possession of the emailed link
+  proves email ownership; there is no password to verify).
+
 ## 0.3.14
 
 ### Patch Changes
