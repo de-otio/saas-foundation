@@ -109,6 +109,20 @@ const COMMON_BUILD_OPTIONS: BuildOptions = {
   // esbuild emits a sentinel `__name` and similar helpers when
   // bundling ESM; keep the helper layout stable across runs.
   keepNames: false,
+  // ESM output + a CJS dependency that does `require("node:os")` (e.g.
+  // aws-jwt-verify, inlined into the Lambda@Edge check-auth bundle) crashes at
+  // runtime: esbuild rewrites the call to its `__require` shim, which throws
+  // `Dynamic require of "node:os" is not supported` because an .mjs module has
+  // no global `require`. The shim guards on `typeof require !== "undefined"`
+  // first, so defining a real top-level `require` via createRequire makes the
+  // dynamic require resolve instead of throw. Without this the check-auth
+  // function dies on init and CloudFront returns 503 LambdaExecutionError.
+  banner: {
+    js: [
+      'import { createRequire as __vestibulumCreateRequire } from "node:module";',
+      "const require = __vestibulumCreateRequire(import.meta.url);",
+    ].join("\n"),
+  },
 };
 
 /** Regional bundles (nine of ten) externalise AWS SDK v3 + aws-jwt-verify. */

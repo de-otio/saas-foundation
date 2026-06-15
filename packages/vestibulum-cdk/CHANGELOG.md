@@ -1,5 +1,25 @@
 # @de-otio/vestibulum-cdk
 
+## 0.3.7
+
+### Patch Changes
+
+- Fix the Lambda@Edge `check-auth` bundle crashing on init with
+  `Dynamic require of "node:os" is not supported`, which made the
+  `MagicLinkAuthSite` front door return `503 LambdaExecutionError` on every
+  request (the function died before the handler ran, so nothing reached
+  CloudWatch).
+
+  The shipped bundles are ESM (`format: "esm"`, `index.mjs`). The edge bundle
+  inlines `aws-jwt-verify` (only the AWS SDK is externalised for Lambda@Edge),
+  and a transitive dependency does a runtime `require("node:os")`. esbuild
+  rewrites that to its `__require` shim, which throws in an `.mjs` module because
+  there is no global `require`. The shim guards on `typeof require !== "undefined"`
+  first, so the build now prepends a `createRequire` banner
+  (`const require = createRequire(import.meta.url)`) that defines a real
+  top-level `require` — the dynamic require then resolves instead of throwing.
+  All 12 bundles are rebuilt and the committed bundle lock is regenerated.
+
 ## 0.3.6
 
 ### Patch Changes
