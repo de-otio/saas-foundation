@@ -762,6 +762,18 @@ export class MagicLinkIdentity extends Construct {
     this.tokenTable.grantWriteData(this.createAuthFn);
     this.denylistTable.grantReadData(this.createAuthFn);
     this.rateLimitTable.grantReadWriteData(this.createAuthFn);
+    // CreateAuthChallenge sends the magic-link email via SES SendEmail from the
+    // verified sender identity. Without this grant the handler throws and
+    // Cognito returns "CreateAuthChallenge failed: ... not authorized to
+    // perform ses:SendEmail ...". Scoped to this construct's sender identity.
+    this.createAuthFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["ses:SendEmail", "ses:SendRawEmail"],
+        resources: [
+          `arn:aws:ses:${Stack.of(this).region}:${Stack.of(this).account}:identity/${senderDomain}`,
+        ],
+      }),
+    );
 
     this.tokenTable.grantWriteData(this.verifyAuthFn);
 

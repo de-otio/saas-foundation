@@ -1,5 +1,16 @@
 # @de-otio/vestibulum-cdk
 
+## 0.3.13
+
+### Patch Changes
+
+- Grant the CreateAuthChallenge trigger `ses:SendEmail` / `ses:SendRawEmail` on
+  the magic-link sender identity. The handler sends the magic-link email via SES,
+  but the construct never granted it, so the trigger threw and Cognito returned
+  `CreateAuthChallenge failed: ... not authorized to perform ses:SendEmail on
+resource arn:aws:ses:...:identity/<domain>` — no magic-link email could be
+  sent. Scoped to the construct's verified sender identity ARN.
+
 ## 0.3.12
 
 ### Patch Changes
