@@ -125,8 +125,14 @@ const COMMON_BUILD_OPTIONS: BuildOptions = {
   },
 };
 
-/** Regional bundles (nine of ten) externalise AWS SDK v3 + aws-jwt-verify. */
-const REGIONAL_EXTERNAL: ReadonlyArray<string> = ["@aws-sdk/*", "aws-jwt-verify"];
+// Regional bundles externalise ONLY AWS SDK v3 — the managed runtime ships it.
+// `aws-jwt-verify` must NOT be externalised: it is not provided by the Lambda
+// runtime and no layer/node_modules ships it, so a bare (eager ESM) import of
+// it crashes the trigger at load with "Cannot find package 'aws-jwt-verify'".
+// Every regional bundle pulls the import transitively through the
+// `@de-otio/vestibulum` barrel, so all of them must inline it. It is
+// zero-dependency and small, so inlining is cheap.
+const REGIONAL_EXTERNAL: ReadonlyArray<string> = ["@aws-sdk/*"];
 
 /** L@E bundle externalises ONLY AWS SDK v3 — `aws-jwt-verify` must be inlined. */
 const EDGE_EXTERNAL: ReadonlyArray<string> = ["@aws-sdk/*"];

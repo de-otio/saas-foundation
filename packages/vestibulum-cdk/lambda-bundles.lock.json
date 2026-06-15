@@ -7,18 +7,18 @@
       "filename": "admin/index.mjs"
     },
     "auth-signout": {
-      "sha256": "sha256:37514d8b6d13f5236e1175c16430e73f4f17a6e3ae7725de11569c948b34fb7e",
-      "sizeBytes": 1217364,
+      "sha256": "sha256:458088e70b657e448f7ab0c1f05d283158fc4e9646089b7b0971eacafa8f3137",
+      "sizeBytes": 1233770,
       "filename": "auth-signout/index.mjs"
     },
     "auth-verify": {
-      "sha256": "sha256:1bf9e5bfb9e632f05afc64dd9ffc39b7f2965e081b8e81db2a8f62639bd4d3c5",
-      "sizeBytes": 1217712,
+      "sha256": "sha256:820b373fd4eeaf3e6345c2ca297e2fd6f8cf2e2f4cd6d528c01f8cbf16ff4664",
+      "sizeBytes": 1234118,
       "filename": "auth-verify/index.mjs"
     },
     "bounce-handler": {
-      "sha256": "sha256:882dcb4828eae7747eb9b33272c45a7eecf2a0f6bdf0c2dec4dffdda14f53c38",
-      "sizeBytes": 1217859,
+      "sha256": "sha256:264b7152d9034a5a35b99d67a6422aaa2bbe423e420776f3f79797647a6b6db6",
+      "sizeBytes": 1234265,
       "filename": "bounce-handler/index.mjs"
     },
     "check-auth": {
@@ -27,28 +27,28 @@
       "filename": "check-auth/index.mjs"
     },
     "create-auth": {
-      "sha256": "sha256:de2bebc3abe4fa02d591429c40ae956de5f339a0f1075a806bfc65450b579132",
-      "sizeBytes": 1219719,
+      "sha256": "sha256:09376e75c86777e921431415bbfdadf7f0456a53a2509f0c8d2894904136feaa",
+      "sizeBytes": 1236125,
       "filename": "create-auth/index.mjs"
     },
     "define-auth": {
-      "sha256": "sha256:5a097d72b4673c59faf11ac75603279e8905449479f24a7b5d5e36746908ed06",
-      "sizeBytes": 1215904,
+      "sha256": "sha256:5df5a60d81cc3b0219670fcc6aa2ab1d7138177737275992bcd3f09ddbddd9ea",
+      "sizeBytes": 1232310,
       "filename": "define-auth/index.mjs"
     },
     "post-confirmation": {
-      "sha256": "sha256:d7c08cde737891a18914e3bc2a2b4debd405dd710a6a84a4f55480dee2c9489e",
-      "sizeBytes": 1216407,
+      "sha256": "sha256:098cdb3ef06f35264538635c9d5d117c3a545e0fceb6a09d4e1d962948f8dae8",
+      "sizeBytes": 1232813,
       "filename": "post-confirmation/index.mjs"
     },
     "pre-signup": {
-      "sha256": "sha256:1153f588e859f164363f1dce0267f3b014678a7b879518c8d7af84d82524a0c2",
-      "sizeBytes": 1217366,
+      "sha256": "sha256:41335b4630c720921eda9a9d92e6d3a6a0a674b74ee9660f031102b6dd5cd1f6",
+      "sizeBytes": 1233772,
       "filename": "pre-signup/index.mjs"
     },
     "pre-token-generation": {
-      "sha256": "sha256:18820848e2fc9541fee9ed65e419a8ad16a0f6416d99f8217ea5d14cfc7c521a",
-      "sizeBytes": 1218839,
+      "sha256": "sha256:34590cfbe541c5ee4637a52f1ce9331deaa17b5bb4aecd3012ba091af6e5525c",
+      "sizeBytes": 1235245,
       "filename": "pre-token-generation/index.mjs"
     },
     "reconciler": {
@@ -57,8 +57,8 @@
       "filename": "reconciler/index.mjs"
     },
     "verify-auth": {
-      "sha256": "sha256:bd4ebe568d6cdbdf2f0f23654ef697536f55c742962fe98b6cdb5273d72503f2",
-      "sizeBytes": 1217732,
+      "sha256": "sha256:dc882632121d78c25cbe6e2ffc418f283ed67e29714859910f85f27182433f9f",
+      "sizeBytes": 1234138,
       "filename": "verify-auth/index.mjs"
     }
   }

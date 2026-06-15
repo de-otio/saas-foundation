@@ -1,5 +1,22 @@
 # @de-otio/vestibulum-cdk
 
+## 0.3.9
+
+### Patch Changes
+
+- Stop externalising `aws-jwt-verify` in the regional Lambda bundles (Cognito
+  triggers: pre-signup, pre-token-generation, post-confirmation, the CUSTOM_AUTH
+  challenge handlers, bounce-handler, plus the auth-verify / auth-signout
+  function-URL handlers). Every regional handler pulls `aws-jwt-verify` in
+  transitively through the `@de-otio/vestibulum` barrel, and an externalised bare
+  ESM `import` of it is eager — but the Lambda managed runtime does not provide
+  `aws-jwt-verify` and no layer/node_modules ships it, so the function crashed at
+  load with `Cannot find package 'aws-jwt-verify' imported from
+/var/task/index.mjs`. This broke sign-up at the PreSignUp trigger
+  (`UserLambdaValidationException`). `aws-jwt-verify` is zero-dependency, so it is
+  now inlined into each regional bundle (only `@aws-sdk/*`, which the runtime does
+  provide, stays external). All 12 bundles rebuilt, lock regenerated.
+
 ## 0.3.8
 
 ### Patch Changes
