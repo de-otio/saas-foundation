@@ -44,7 +44,8 @@ export async function isDenylisted(
     const result = await client.send(
       new GetItemCommand({
         TableName: tableName,
-        Key: { email_hash: { S: emailHash } },
+        // PK attribute is `email_hmac` — must match the DenylistTable schema.
+        Key: { email_hmac: { S: emailHash } },
         ConsistentRead: true,
       }),
     );

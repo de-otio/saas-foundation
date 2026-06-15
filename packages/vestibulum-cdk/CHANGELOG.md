@@ -1,5 +1,26 @@
 # @de-otio/vestibulum-cdk
 
+## 0.3.10
+
+### Patch Changes
+
+- Fix DynamoDB key-name mismatches between the magic-link Cognito-trigger
+  handlers and the table schemas, which made sign-up and the auth challenge fail
+  at runtime with `ValidationException: The provided key element does not match
+the schema`. The handlers' shipped bundles addressed three tables by the wrong
+  partition-key attribute name:
+
+  - **RateLimitTable** partition key is `bucket_id`, but the PreSignUp rate-limit
+    used `pk` and the CreateAuthChallenge rate-limit used `rate_key`.
+  - **DenylistTable** partition key is `email_hmac`, but the CreateAuthChallenge
+    quarantine check (read) and the bounce-handler denylist write used
+    `email_hash`.
+
+  All handlers now address the tables by their actual schema keys (`bucket_id`,
+  `email_hmac`; TokenTable's `token_hash` was already correct). These paths had
+  unit tests with mocked DynamoDB but were never exercised against the real
+  table schema, so the drift went unnoticed. Bundles rebuilt, lock regenerated.
+
 ## 0.3.9
 
 ### Patch Changes

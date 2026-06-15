@@ -61,7 +61,8 @@ export async function tryConsumeRateLimit(opts: RateLimitOptions): Promise<boole
     await opts.client.send(
       new UpdateItemCommand({
         TableName: opts.tableName,
-        Key: { rate_key: { S: emailHash } },
+        // PK attribute is `bucket_id` — must match the RateLimitTable schema.
+        Key: { bucket_id: { S: emailHash } },
         // Either the row doesn't exist (first send in window) or the count is
         // strictly less than the limit. Atomic — concurrent sends cannot both
         // step the counter past the limit.

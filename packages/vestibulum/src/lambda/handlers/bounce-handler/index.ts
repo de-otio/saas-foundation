@@ -165,7 +165,9 @@ export function createBounceHandler(deps: BounceHandlerDeps = {}) {
           new PutItemCommand({
             TableName: denylistTableName,
             Item: {
-              email_hash: { S: emailHash },
+              // PK attribute is `email_hmac` — must match the DenylistTable
+              // schema (and the read key in quarantine-check).
+              email_hmac: { S: emailHash },
               quarantined_at: { S: new Date().toISOString() },
               ttl: { N: String(ttlSecs) },
             },

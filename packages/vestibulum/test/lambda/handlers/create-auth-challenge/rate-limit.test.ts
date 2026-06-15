@@ -111,7 +111,7 @@ describe("tryConsumeRateLimit", () => {
 
   it("maps the same nowMs to a stable window key (no sub-window clock jitter evasion)", async () => {
     ddbMock.on(UpdateItemCommand).resolves({});
-    // Two calls anywhere inside the same window must use the same rate_key
+    // Two calls anywhere inside the same window must use the same bucket_id
     // (window-start hash) — so an attacker nudging the clock within a window
     // cannot reset their counter.
     const windowStart = Math.floor(FIXED_NOW_MS / RATE_LIMIT_WINDOW_MS) * RATE_LIMIT_WINDOW_MS;
@@ -131,8 +131,8 @@ describe("tryConsumeRateLimit", () => {
       nowMs: midWindow,
     });
     const calls = ddbMock.commandCalls(UpdateItemCommand);
-    const key0 = (calls[0]!.args[0].input.Key as { rate_key: { S: string } }).rate_key.S;
-    const key1 = (calls[1]!.args[0].input.Key as { rate_key: { S: string } }).rate_key.S;
+    const key0 = (calls[0]!.args[0].input.Key as { bucket_id: { S: string } }).bucket_id.S;
+    const key1 = (calls[1]!.args[0].input.Key as { bucket_id: { S: string } }).bucket_id.S;
     expect(key0).toBe(key1);
     // And the window_start value written matches the bucket they share.
     expect(calls[0]!.args[0].input.ExpressionAttributeValues?.[":ws"]).toEqual({
@@ -158,8 +158,8 @@ describe("tryConsumeRateLimit", () => {
       nowMs: FIXED_NOW_MS + RATE_LIMIT_WINDOW_MS,
     });
     const calls = ddbMock.commandCalls(UpdateItemCommand);
-    const key0 = (calls[0]!.args[0].input.Key as { rate_key: { S: string } }).rate_key.S;
-    const key1 = (calls[1]!.args[0].input.Key as { rate_key: { S: string } }).rate_key.S;
+    const key0 = (calls[0]!.args[0].input.Key as { bucket_id: { S: string } }).bucket_id.S;
+    const key1 = (calls[1]!.args[0].input.Key as { bucket_id: { S: string } }).bucket_id.S;
     expect(key0).not.toBe(key1);
   });
 
@@ -180,8 +180,8 @@ describe("tryConsumeRateLimit", () => {
       nowMs: FIXED_NOW_MS,
     });
     const calls = ddbMock.commandCalls(UpdateItemCommand);
-    const key0 = (calls[0]!.args[0].input.Key as { rate_key: { S: string } }).rate_key.S;
-    const key1 = (calls[1]!.args[0].input.Key as { rate_key: { S: string } }).rate_key.S;
+    const key0 = (calls[0]!.args[0].input.Key as { bucket_id: { S: string } }).bucket_id.S;
+    const key1 = (calls[1]!.args[0].input.Key as { bucket_id: { S: string } }).bucket_id.S;
     expect(key0).toBe(key1);
   });
 

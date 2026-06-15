@@ -111,7 +111,8 @@ async function checkAndIncrementRateLimit(
     await dynamoClient.send(
       new UpdateItemCommand({
         TableName: tableName,
-        Key: { pk: { S: pk } },
+        // PK attribute is `bucket_id` — must match the RateLimitTable schema.
+        Key: { bucket_id: { S: pk } },
         UpdateExpression: "SET #count = if_not_exists(#count, :zero) + :one, #ttl = :ttl",
         ConditionExpression: "attribute_not_exists(#count) OR #count < :limit",
         ExpressionAttributeNames: {
