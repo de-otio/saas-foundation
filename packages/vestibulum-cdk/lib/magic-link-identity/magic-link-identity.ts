@@ -168,16 +168,31 @@ const RuntimeEnv = {
 // ---------------------------------------------------------------------------
 
 /**
- * `onEvent` handler. Returns a stable `PhysicalResourceId` keyed on the
- * domain; no-op on Update/Delete. The actual waiting happens in the
- * `isComplete` handler.
+ * \`onEvent\` handler. Returns a \`PhysicalResourceId\`; no AWS calls (the poll
+ * lives in the \`isComplete\` handler).
+ *
+ * On Update/Delete it **echoes \`event.PhysicalResourceId\`** rather than
+ * recomputing it. This is the critical correctness rule for an async
+ * (\`isComplete\`-waiter) custom resource: if a CREATE never completes — e.g.
+ * the SES domain never verifies and the stack is deleted while the waiter is
+ * still polling — CloudFormation still holds the framework's *placeholder*
+ * physical id, never the value this handler returned on CREATE. Recomputing
+ * \`ses-verify-<domain>\` on Delete would then differ from that placeholder, and
+ * CloudFormation rejects any physical-id change during Delete
+ * ("cannot change the physical resource ID ... during deletion"), wedging the
+ * stack in DELETE_FAILED. Echoing the incoming id makes Delete (and Update)
+ * id-stable regardless of how the CREATE ended.
  */
-const SES_VERIFY_ON_EVENT_SOURCE = `
+/** @internal Exported only for unit tests; not part of the public API. */
+export const SES_VERIFY_ON_EVENT_SOURCE = `
 exports.handler = async (event) => {
+  if (event.RequestType === "Update" || event.RequestType === "Delete") {
+    // Preserve whatever physical id CloudFormation currently holds — never
+    // recompute it, or a delete-of-an-incomplete-create fails.
+    return { PhysicalResourceId: event.PhysicalResourceId };
+  }
   const domain =
     (event.ResourceProperties && event.ResourceProperties.domain) || "unknown";
-  // Stable physical id so Update never replaces and Delete targets the
-  // same logical resource. No AWS calls here — the poll is in isComplete.
   return { PhysicalResourceId: "ses-verify-" + domain };
 };
 `;
@@ -780,7 +795,20 @@ export class MagicLinkIdentity extends Construct {
       (token, i) =>
         new route53.CnameRecord(this, `DkimCname${i + 1}`, {
           zone: props.hostedZone,
-          recordName: token.name,
+          // `token.name` is a deploy-time CFN attribute (Fn::GetAtt
+          // DkimDNSTokenName*) that resolves to the *already* fully-qualified
+          // `<token>._domainkey.<senderDomain>`. CDK's RecordSet decides
+          // whether to append the zone apex with a synth-time
+          // `recordName.endsWith(zoneName)` check — but at synth the value is
+          // an opaque token, the check fails, and CDK appends the zone anyway,
+          // producing a doubled `..._domainkey.<sender>.<zone>` that SES can
+          // never find (DKIM stays PENDING → verification-wait times out).
+          // Appending a trailing dot marks the name absolute, short-circuiting
+          // the append. (`domain(senderDomain)` is kept, not
+          // `publicHostedZone()`, because the sender may be a subdomain of the
+          // zone — see validateSenderMatchesHostedZone — which the
+          // zone-apex-keyed publicHostedZone() helper would get wrong.)
+          recordName: `${token.name}.`,
           domainName: token.value,
           ttl: Duration.hours(1),
           comment: `Vestibulum DKIM CNAME ${i + 1} for ${senderDomain}`,

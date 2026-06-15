@@ -1,5 +1,37 @@
 # @de-otio/vestibulum-cdk
 
+## 0.3.6
+
+### Patch Changes
+
+- Fix two `MagicLinkIdentity` bugs that made a cold-domain deploy fail to
+  converge and then fail to roll back. Both surface only on a real, never-yet-
+  verified SES sender domain, which is why the 0.3.5 verification-wait (correct
+  in itself) is what exposed them.
+
+  - **DKIM CNAME records were created with a doubled domain suffix.** The records
+    were named from `sesIdentity.dkimDnsTokenName{1,2,3}`, a deploy-time
+    CloudFormation attribute that resolves to the _already_ fully-qualified
+    `<token>._domainkey.<sender>`. CDK's `RecordSet` decides whether to append
+    the zone apex with a **synth-time** `recordName.endsWith(zoneName)` check;
+    against an opaque token that check always fails, so CDK appended the zone
+    again, producing `<token>._domainkey.<sender>.<zone>`. SES never finds the
+    records, DKIM stays `PENDING`, and the verification-wait runs to its 45-min
+    timeout. Fixed by marking the record name absolute (trailing dot), which
+    short-circuits the append. (`ses.Identity.domain(senderDomain)` is kept
+    rather than the records-auto-creating `publicHostedZone()` helper, because
+    the sender may legitimately be a subdomain of the hosted zone — which the
+    zone-apex-keyed `publicHostedZone()` would get wrong.)
+  - **The verification-wait `onEvent` handler changed the physical resource id on
+    Delete.** It recomputed `ses-verify-<domain>` on every event. When the async
+    waiter's CREATE never completes (the domain never verifies) and the stack is
+    then deleted, CloudFormation still holds the framework's _placeholder_
+    physical id — so recomputing a different value on Delete violates
+    CloudFormation's "physical id may not change during deletion" rule and wedges
+    the stack in `DELETE_FAILED`. The handler now echoes
+    `event.PhysicalResourceId` on Update/Delete, making teardown id-stable
+    regardless of how the CREATE ended.
+
 ## 0.3.5
 
 ### Patch Changes

@@ -17,6 +17,7 @@ import {
   type MagicLinkIdentityProps,
 } from "../../lib/magic-link-identity/index.js";
 import type { IMagicLinkIdentity } from "../../lib/_internal/identity-handle.js";
+import { SES_VERIFY_ON_EVENT_SOURCE } from "../../lib/magic-link-identity/magic-link-identity.js";
 
 const TEST_ENV = { account: "123456789012", region: "eu-west-1" };
 
@@ -93,6 +94,37 @@ describe("MagicLinkIdentity — default props", () => {
   it("creates Route 53 records for DKIM, SPF, and DMARC", () => {
     // 3 DKIM CNAMEs + 1 SPF TXT + 1 DMARC TXT = 5 records.
     template.resourceCountIs("AWS::Route53::RecordSet", 5);
+  });
+
+  // Regression: the DKIM record name is the SES `DkimDNSTokenName*` attribute,
+  // which already resolves to the fully-qualified `<token>._domainkey.<sender>`.
+  // CDK's RecordSet decides whether to append the zone apex with a synth-time
+  // `recordName.endsWith(zoneName)` check that an opaque token always fails, so
+  // without the trailing-dot (absolute) marker CDK doubles the suffix
+  // (`..._domainkey.example.com.example.com`) and SES never finds the records.
+  // Each DKIM CNAME `Name` must therefore be exactly the token joined with a
+  // bare ".", with NO zone-name element appended.
+  // Each DKIM CNAME `Name` must be exactly the SES token attribute joined with
+  // a bare "." (absolute), with NO zone-name element appended. On the buggy
+  // (doubled-suffix) output the trailing join element is ".example.com.", so
+  // this exact-match assertion fails there — it is a precise regression guard.
+  it("DKIM CNAME names are absolute (not double-suffixed with the zone)", () => {
+    for (const n of [1, 2, 3]) {
+      template.hasResourceProperties("AWS::Route53::RecordSet", {
+        Type: "CNAME",
+        Name: {
+          "Fn::Join": [
+            "",
+            [
+              {
+                "Fn::GetAtt": [Match.stringLikeRegexp("SesIdentity"), `DkimDNSTokenName${n}`],
+              },
+              ".",
+            ],
+          ],
+        },
+      });
+    }
   });
 
   it("creates an SNS topic for SES bounces", () => {
@@ -516,6 +548,69 @@ describe("MagicLinkIdentity — SES verification-wait (B3)", () => {
         ]),
       }),
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SES verification-wait onEvent physical-id stability (regression)
+//
+// Bug: when the async waiter's CREATE never completes (SES domain never
+// verifies) and the stack is then deleted, CloudFormation still holds the
+// framework's placeholder physical id — not the value onEvent returned on
+// CREATE. If onEvent recomputes "ses-verify-<domain>" on Delete, it differs
+// from that placeholder and CloudFormation refuses the change ("cannot change
+// the physical resource ID ... during deletion"), wedging the stack in
+// DELETE_FAILED. onEvent must echo event.PhysicalResourceId on Update/Delete.
+// ---------------------------------------------------------------------------
+
+describe("MagicLinkIdentity — SES verification-wait onEvent (physical-id stability)", () => {
+  // Load the inline handler source as a runnable CommonJS module.
+  function loadHandler(
+    source: string,
+  ): (event: Record<string, unknown>) => Promise<{ PhysicalResourceId?: string }> {
+    const mod: { exports: { handler?: (e: Record<string, unknown>) => Promise<never> } } = {
+      exports: {},
+    };
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval -- loading the inline Lambda handler source under test
+    const factory = new Function("exports", "module", source) as (
+      exports: object,
+      module: object,
+    ) => void;
+    factory(mod.exports, mod);
+    if (!mod.exports.handler) throw new Error("handler not exported by inline source");
+    return mod.exports.handler;
+  }
+
+  const onEvent = loadHandler(SES_VERIFY_ON_EVENT_SOURCE);
+
+  it("returns a deterministic ses-verify-<domain> id on Create", async () => {
+    const res = await onEvent({
+      RequestType: "Create",
+      ResourceProperties: { domain: "auth.example.com" },
+    });
+    expect(res.PhysicalResourceId).toBe("ses-verify-auth.example.com");
+  });
+
+  it("echoes the incoming physical id on Delete (never recomputes)", async () => {
+    // Simulates delete of an incomplete create: CFN still holds the
+    // framework placeholder, not "ses-verify-<domain>".
+    const placeholder = "Stack-Identity-SesVerifyWait-G9FGKI8KVXSG";
+    const res = await onEvent({
+      RequestType: "Delete",
+      PhysicalResourceId: placeholder,
+      ResourceProperties: { domain: "auth.example.com" },
+    });
+    expect(res.PhysicalResourceId).toBe(placeholder);
+  });
+
+  it("echoes the incoming physical id on Update (id-stable, no replacement)", async () => {
+    const prior = "ses-verify-auth.example.com";
+    const res = await onEvent({
+      RequestType: "Update",
+      PhysicalResourceId: prior,
+      ResourceProperties: { domain: "auth.example.com" },
+    });
+    expect(res.PhysicalResourceId).toBe(prior);
   });
 });
 
