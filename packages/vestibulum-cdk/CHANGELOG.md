@@ -1,5 +1,35 @@
 # @de-otio/vestibulum-cdk
 
+## 0.3.5
+
+### Patch Changes
+
+- Fix a deploy-time bug that made `MagicLinkIdentity` impossible to deploy on a
+  cold (unverified) SES domain. The construct creates the SES `EmailIdentity`
+  (DKIM) and Route 53 DKIM/SPF/DMARC records, then a Cognito user pool with
+  `UserPoolEmail.withSES({ sesVerifiedDomain })`. Cognito validates the domain
+  is verified for sending at pool-creation time, but SES DKIM verification is
+  asynchronous (minutes). On a fresh domain the pool's CREATE failed
+  ("Email address is not verified … identity/&lt;domain&gt;") and the stack
+  rolled back, never converging.
+
+  - **SES domain verification-wait.** A CloudFormation custom resource backed by
+    `custom_resources.Provider` (async-polling `onEvent` + `isComplete`
+    handlers) now blocks until SESv2 `GetEmailIdentity` reports the domain
+    verified for sending (`queryInterval` 30s, `totalTimeout` 45 min). The
+    custom resource depends on the three DKIM CNAME records and the SES
+    identity; the Cognito pool depends on the custom resource, so the pool only
+    CREATEs once the domain is actually usable. Handlers are inline
+    (`lambda.Code.fromInline`) on `NODEJS_22_X` — no addition to the
+    lambda-bundles pipeline. Targeted `NagSuppressions` cover the Provider
+    framework + handler findings (IAM4/IAM5/L1).
+  - **SES identity removal policy RETAIN → DESTROY.** With the verification-wait
+    making cold deploys converge, the SES `EmailIdentity` now uses
+    `RemovalPolicy.DESTROY`. RETAIN previously left a PENDING identity behind on
+    a failed deploy, which then collided ("EmailIdentity already exists") on the
+    next attempt and blocked recovery; DESTROY lets a failed deploy clean up
+    fully and retry from a clean slate.
+
 ## 0.3.4
 
 ### Patch Changes

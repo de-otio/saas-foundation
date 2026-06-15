@@ -55,9 +55,11 @@ describe("MagicLinkIdentity — default props", () => {
   });
 
   it("creates the five trigger Lambdas via Code.fromAsset (regional bundles)", () => {
-    // 5 trigger Lambdas plus the CDK-generated log-retention custom-resource
-    // helper Lambda (the deprecated `logRetention` prop emits one).
-    template.resourceCountIs("AWS::Lambda::Function", 6);
+    // 5 trigger Lambdas + the CDK log-retention helper Lambda + the
+    // SES verification-wait stack (B3): 2 inline handlers (onEvent,
+    // isComplete) and 3 Provider framework Lambdas (framework onEvent,
+    // isComplete, onTimeout) = 11 total.
+    template.resourceCountIs("AWS::Lambda::Function", 11);
   });
 
   it("pins runtime to nodejs22.x on the trigger Lambdas", () => {
@@ -355,9 +357,9 @@ describe("MagicLinkIdentity — costDosGuard (S7)", () => {
       costDosGuard: { enabled: true, sendsPerHourCap: 100 },
     });
     expect(identity.costDosGuard?.selfDefenceHandler).toBeUndefined();
-    // 5 trigger Lambdas + log-retention helper = 6. No extra
-    // self-defence Lambda.
-    Template.fromStack(stack).resourceCountIs("AWS::Lambda::Function", 6);
+    // 5 trigger Lambdas + log-retention helper + 5 SES verification-wait
+    // Lambdas (B3) = 11. No extra self-defence Lambda.
+    Template.fromStack(stack).resourceCountIs("AWS::Lambda::Function", 11);
   });
 
   it("creates the self-defence handler when selfDefence: true", () => {
@@ -370,8 +372,9 @@ describe("MagicLinkIdentity — costDosGuard (S7)", () => {
 
     expect(identity.costDosGuard?.selfDefenceHandler).toBeDefined();
 
-    // 5 trigger Lambdas + log-retention helper + self-defence handler = 7.
-    template.resourceCountIs("AWS::Lambda::Function", 7);
+    // 5 trigger Lambdas + log-retention helper + 5 SES verification-wait
+    // Lambdas (B3) + self-defence handler = 12.
+    template.resourceCountIs("AWS::Lambda::Function", 12);
 
     template.hasResourceProperties("AWS::Lambda::Function", {
       Runtime: "nodejs22.x",
@@ -459,6 +462,60 @@ describe("MagicLinkIdentity — costDosGuard (S7)", () => {
           costDosGuard: { enabled: true, sendsPerHourCap: Number.NaN },
         }),
     ).toThrowError(/sendsPerHourCap/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SES domain verification-wait (B3) — cold-SES-domain deploy fix
+// ---------------------------------------------------------------------------
+
+describe("MagicLinkIdentity — SES verification-wait (B3)", () => {
+  let template: Template;
+
+  beforeAll(() => {
+    const stack = makeStack("SesVerifyStack");
+    new MagicLinkIdentity(stack, "Identity", defaultProps(stack));
+    template = Template.fromStack(stack);
+  });
+
+  it("creates a Custom:: verification-wait resource", () => {
+    template.resourceCountIs("Custom::VestibulumSesVerification", 1);
+    template.hasResourceProperties("Custom::VestibulumSesVerification", {
+      domain: "example.com",
+    });
+  });
+
+  it("makes the Cognito user pool DependsOn the verification-wait resource", () => {
+    const pools = template.findResources("AWS::Cognito::UserPool");
+    const poolEntries = Object.entries(pools);
+    expect(poolEntries).toHaveLength(1);
+    const wait = template.findResources("Custom::VestibulumSesVerification");
+    const waitId = Object.keys(wait)[0];
+    expect(waitId).toBeDefined();
+
+    const [, pool] = poolEntries[0] as [string, { DependsOn?: string[] }];
+    expect(pool.DependsOn).toBeDefined();
+    expect(pool.DependsOn).toContain(waitId);
+  });
+
+  it("sets the SES email identity removal policy to Delete (was RETAIN)", () => {
+    template.hasResource("AWS::SES::EmailIdentity", {
+      DeletionPolicy: "Delete",
+    });
+  });
+
+  it("grants the isComplete handler ses:GetEmailIdentity (no resource-level perms)", () => {
+    template.hasResourceProperties("AWS::IAM::Policy", {
+      PolicyDocument: Match.objectLike({
+        Statement: Match.arrayWith([
+          Match.objectLike({
+            Action: "ses:GetEmailIdentity",
+            Effect: "Allow",
+            Resource: "*",
+          }),
+        ]),
+      }),
+    });
   });
 });
 

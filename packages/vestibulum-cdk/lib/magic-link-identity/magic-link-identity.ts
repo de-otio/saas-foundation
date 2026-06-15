@@ -38,7 +38,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
 
-import { Annotations, Duration, RemovalPolicy, Stack } from "aws-cdk-lib";
+import { Annotations, CustomResource, Duration, RemovalPolicy, Stack } from "aws-cdk-lib";
 import * as cognito from "aws-cdk-lib/aws-cognito";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as iam from "aws-cdk-lib/aws-iam";
@@ -50,6 +50,8 @@ import * as ses from "aws-cdk-lib/aws-ses";
 import * as sns from "aws-cdk-lib/aws-sns";
 import * as snsSubscriptions from "aws-cdk-lib/aws-sns-subscriptions";
 import * as acm from "aws-cdk-lib/aws-certificatemanager";
+import * as customResources from "aws-cdk-lib/custom-resources";
+import { NagSuppressions } from "cdk-nag";
 import { Construct } from "constructs";
 
 import { MagicLinkIdentityPropsError } from "./errors.js";
@@ -144,6 +146,72 @@ const RuntimeEnv = {
   SIGNUP_MODE: "VESTIBULUM_SIGNUP_MODE",
   BOUNCE_HMAC_SECRET: "VESTIBULUM_BOUNCE_HMAC_SECRET",
 } as const;
+
+// ---------------------------------------------------------------------------
+// SES domain verification-wait — inline custom-resource handler sources
+//
+// Cold-SES-domain fix (B3): Cognito validates that the SES sender domain is
+// *verified for sending* at pool-CREATE time, but SES DKIM verification is
+// asynchronous (minutes after the CNAMEs are published). On a fresh domain
+// the pool's CREATE fails ("Email address is not verified … identity/<domain>")
+// and the stack rolls back, so it never converges.
+//
+// These two inline handlers back a `custom_resources.Provider` (async-polling
+// pattern). The Provider's `isComplete` handler is re-invoked on
+// `queryInterval` until SES reports the domain verified for sending; the
+// Cognito pool depends on the resulting CustomResource, so the pool only
+// CREATEs once the domain is actually usable.
+//
+// Kept inline (not in the lambda-bundles pipeline) because the dependency
+// surface is a single AWS SDK client (`@aws-sdk/client-sesv2`, present on the
+// NODEJS_22_X runtime) and the code is short enough to read in-place.
+// ---------------------------------------------------------------------------
+
+/**
+ * `onEvent` handler. Returns a stable `PhysicalResourceId` keyed on the
+ * domain; no-op on Update/Delete. The actual waiting happens in the
+ * `isComplete` handler.
+ */
+const SES_VERIFY_ON_EVENT_SOURCE = `
+exports.handler = async (event) => {
+  const domain =
+    (event.ResourceProperties && event.ResourceProperties.domain) || "unknown";
+  // Stable physical id so Update never replaces and Delete targets the
+  // same logical resource. No AWS calls here — the poll is in isComplete.
+  return { PhysicalResourceId: "ses-verify-" + domain };
+};
+`;
+
+/**
+ * `isComplete` handler. Polls SESv2 `GetEmailIdentity` and reports complete
+ * once `VerifiedForSendingStatus === true`. On Delete, always complete.
+ */
+const SES_VERIFY_IS_COMPLETE_SOURCE = `
+const { SESv2Client, GetEmailIdentityCommand } = require("@aws-sdk/client-sesv2");
+
+const client = new SESv2Client({});
+
+exports.handler = async (event) => {
+  if (event.RequestType === "Delete") {
+    return { IsComplete: true };
+  }
+  const domain =
+    event.ResourceProperties && event.ResourceProperties.domain;
+  if (!domain) {
+    return { IsComplete: false };
+  }
+  try {
+    const res = await client.send(
+      new GetEmailIdentityCommand({ EmailIdentity: domain }),
+    );
+    return { IsComplete: res.VerifiedForSendingStatus === true };
+  } catch (err) {
+    // Identity not yet readable / transient error — keep polling until the
+    // Provider's totalTimeout elapses rather than failing the deploy early.
+    return { IsComplete: false };
+  }
+};
+`;
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -694,7 +762,13 @@ export class MagicLinkIdentity extends Construct {
       identity: ses.Identity.domain(senderDomain),
       dkimSigning: true,
     });
-    sesIdentity.applyRemovalPolicy(RemovalPolicy.RETAIN);
+    // B3 (cold-SES-domain fix): DESTROY, not RETAIN. With the
+    // verification-wait below, a cold deploy now converges in the happy
+    // path (no rollback). RETAIN previously left a PENDING identity behind
+    // on a failed deploy, which then collided ("EmailIdentity already
+    // exists") on the next attempt and blocked recovery. DESTROY means any
+    // failed deploy cleans up fully and the retry starts from a clean slate.
+    sesIdentity.applyRemovalPolicy(RemovalPolicy.DESTROY);
 
     const dkimTokens = [
       { name: sesIdentity.dkimDnsTokenName1, value: sesIdentity.dkimDnsTokenValue1 },
@@ -702,15 +776,16 @@ export class MagicLinkIdentity extends Construct {
       { name: sesIdentity.dkimDnsTokenName3, value: sesIdentity.dkimDnsTokenValue3 },
     ];
 
-    dkimTokens.forEach((token, i) => {
-      new route53.CnameRecord(this, `DkimCname${i + 1}`, {
-        zone: props.hostedZone,
-        recordName: token.name,
-        domainName: token.value,
-        ttl: Duration.hours(1),
-        comment: `Vestibulum DKIM CNAME ${i + 1} for ${senderDomain}`,
-      });
-    });
+    const dkimRecords = dkimTokens.map(
+      (token, i) =>
+        new route53.CnameRecord(this, `DkimCname${i + 1}`, {
+          zone: props.hostedZone,
+          recordName: token.name,
+          domainName: token.value,
+          ttl: Duration.hours(1),
+          comment: `Vestibulum DKIM CNAME ${i + 1} for ${senderDomain}`,
+        }),
+    );
 
     new route53.TxtRecord(this, "SpfRecord", {
       zone: props.hostedZone,
@@ -727,6 +802,127 @@ export class MagicLinkIdentity extends Construct {
       ttl: Duration.hours(1),
       comment: `Vestibulum DMARC record for ${senderDomain}`,
     });
+
+    // -----------------------------------------------------------------------
+    // SES domain verification-wait (B3 — cold-SES-domain fix)
+    //
+    // A CloudFormation custom resource that blocks until the SES sender
+    // domain is verified for sending. The Cognito pool below depends on it,
+    // so the pool's CREATE (which Cognito validates against SES sending
+    // status) only runs once the domain is actually usable. Without this,
+    // a fresh (unverified) domain makes the pool CREATE fail and the stack
+    // roll back, never converging.
+    // -----------------------------------------------------------------------
+
+    const sesVerifyOnEvent = new lambda.Function(this, "SesVerifyOnEventFn", {
+      runtime: lambda.Runtime.NODEJS_22_X,
+      handler: "index.handler",
+      code: lambda.Code.fromInline(SES_VERIFY_ON_EVENT_SOURCE),
+      timeout: Duration.seconds(30),
+      memorySize: 128,
+      logRetention: logs.RetentionDays.ONE_MONTH,
+      description:
+        "Vestibulum SES verification-wait onEvent handler: returns a stable " +
+        "physical id; the SES poll lives in the isComplete handler.",
+    });
+
+    const sesVerifyIsComplete = new lambda.Function(this, "SesVerifyIsCompleteFn", {
+      runtime: lambda.Runtime.NODEJS_22_X,
+      handler: "index.handler",
+      code: lambda.Code.fromInline(SES_VERIFY_IS_COMPLETE_SOURCE),
+      timeout: Duration.seconds(30),
+      memorySize: 128,
+      logRetention: logs.RetentionDays.ONE_MONTH,
+      description:
+        "Vestibulum SES verification-wait isComplete handler: polls SESv2 " +
+        "GetEmailIdentity until the domain is verified for sending.",
+    });
+
+    // GetEmailIdentity does not support resource-level permissions, so the
+    // statement must be on `*` (scoped by action only).
+    sesVerifyIsComplete.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["ses:GetEmailIdentity"],
+        resources: ["*"],
+      }),
+    );
+
+    const sesVerifyProvider = new customResources.Provider(this, "SesVerifyProvider", {
+      onEventHandler: sesVerifyOnEvent,
+      isCompleteHandler: sesVerifyIsComplete,
+      queryInterval: Duration.seconds(30),
+      totalTimeout: Duration.minutes(45),
+    });
+
+    const sesVerifyWait = new CustomResource(this, "SesVerifyWait", {
+      serviceToken: sesVerifyProvider.serviceToken,
+      resourceType: "Custom::VestibulumSesVerification",
+      properties: {
+        domain: senderDomain,
+        // Stable salt — bound to the domain so the resource is only
+        // re-polled when the target domain changes, not on every deploy.
+        salt: `ses-verify-${senderDomain}`,
+      },
+    });
+
+    // Poll only after the DKIM CNAMEs (and the identity) are published —
+    // verification can't complete before the records exist.
+    sesVerifyWait.node.addDependency(sesIdentity);
+    for (const record of dkimRecords) {
+      sesVerifyWait.node.addDependency(record);
+    }
+
+    // cdk-nag suppressions for the verification-wait resources. These are
+    // a Provider framework + two short inline handlers; the findings below
+    // are inherent to that CDK pattern and accepted here.
+    NagSuppressions.addResourceSuppressions(
+      sesVerifyProvider,
+      [
+        {
+          id: "AwsSolutions-L1",
+          reason:
+            "Provider framework Lambda runtime is managed by aws-cdk-lib's " +
+            "custom_resources.Provider; its runtime is pinned by the CDK " +
+            "version, not consumer-controllable.",
+        },
+        {
+          id: "AwsSolutions-IAM4",
+          reason:
+            "Provider framework role uses the CDK-managed " +
+            "AWSLambdaBasicExecutionRole for its own CloudWatch Logs; this " +
+            "is the framework default and not consumer-controllable.",
+        },
+        {
+          id: "AwsSolutions-IAM5",
+          reason:
+            "Provider framework grants lambda:InvokeFunction on the two " +
+            "handler functions (and their versions, hence a '*' on the " +
+            "version suffix); CDK-managed and scoped to this provider's " +
+            "own handlers.",
+        },
+      ],
+      true,
+    );
+
+    NagSuppressions.addResourceSuppressions(
+      [sesVerifyOnEvent, sesVerifyIsComplete],
+      [
+        {
+          id: "AwsSolutions-IAM4",
+          reason:
+            "Inline verification-wait handlers use the CDK-managed " +
+            "AWSLambdaBasicExecutionRole for CloudWatch Logs only.",
+        },
+        {
+          id: "AwsSolutions-IAM5",
+          reason:
+            "ses:GetEmailIdentity does not support resource-level " +
+            "permissions, so the statement is scoped by action on '*'. " +
+            "This is read-only and cannot mutate any SES resource.",
+        },
+      ],
+      true,
+    );
 
     // -----------------------------------------------------------------------
     // Cognito User Pool
@@ -772,6 +968,10 @@ export class MagicLinkIdentity extends Construct {
       },
       removalPolicy: RemovalPolicy.RETAIN,
     });
+
+    // B3: the pool's CREATE validates against SES sending status, so it must
+    // not begin until the verification-wait reports the domain verified.
+    this.cognitoPool.node.addDependency(sesVerifyWait);
 
     // Inject pool ID into the bounce-handler env (after pool creation;
     // the four trigger Lambdas don't need it — Cognito passes userPoolId
