@@ -701,9 +701,16 @@ describe("MagicLinkIdentity — preTokenGeneration trigger version", () => {
       featureTier: "Essentials",
     });
     const template = Template.fromStack(stack);
+    // Full config (version + ARN) and NO legacy PreTokenGeneration field, or
+    // Cognito rejects the pool ("Cannot use PreTokenGenerationLambda and
+    // PreTokenGeneration with different Lambda function ARN's").
     template.hasResourceProperties("AWS::Cognito::UserPool", {
       LambdaConfig: Match.objectLike({
-        PreTokenGenerationConfig: Match.objectLike({ LambdaVersion: "V2_0" }),
+        PreTokenGenerationConfig: Match.objectLike({
+          LambdaVersion: "V2_0",
+          LambdaArn: Match.anyValue(),
+        }),
+        PreTokenGeneration: Match.absent(),
       }),
     });
   });

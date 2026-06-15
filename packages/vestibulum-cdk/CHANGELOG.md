@@ -1,5 +1,18 @@
 # @de-otio/vestibulum-cdk
 
+## 0.3.17
+
+### Patch Changes
+
+- Fix the `preTokenGenerationVersion: 'V2_0'` override so the pool actually
+  deploys. The first cut set only `PreTokenGenerationConfig.LambdaVersion`, but
+  the L2 `lambdaTriggers` also sets the legacy `LambdaConfig.PreTokenGeneration`
+  (ARN) field, and Cognito rejects a pool that carries both
+  ("Cannot use PreTokenGenerationLambda and PreTokenGeneration with different
+  Lambda function ARN's"). Now set the full `PreTokenGenerationConfig` (version +
+  ARN) and delete the legacy field; the Cognito→Lambda invoke permission from the
+  L2 is retained.
+
 ## 0.3.16
 
 ### Patch Changes

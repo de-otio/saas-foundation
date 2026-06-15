@@ -1117,10 +1117,18 @@ export class MagicLinkIdentity extends Construct {
     // silently drops its claims. Override the L1 here when requested. (V2_0
     // requires an Essentials/Plus feature plan.)
     if (props.preTokenGeneration && props.preTokenGenerationVersion === "V2_0") {
-      cfnPool.addPropertyOverride(
-        "LambdaConfig.PreTokenGenerationConfig.LambdaVersion",
-        "V2_0",
-      );
+      // The L2 `lambdaTriggers.preTokenGeneration` sets only the legacy
+      // `LambdaConfig.PreTokenGeneration` (ARN) field. For V2 we must set the
+      // full `PreTokenGenerationConfig` (version + ARN) AND delete the legacy
+      // field — Cognito rejects a pool that has both
+      // ("Cannot use PreTokenGenerationLambda and PreTokenGeneration with
+      // different Lambda function ARN's"). The L2 still creates the
+      // Cognito→Lambda invoke permission, which we keep.
+      cfnPool.addPropertyOverride("LambdaConfig.PreTokenGenerationConfig", {
+        LambdaVersion: "V2_0",
+        LambdaArn: props.preTokenGeneration.functionArn,
+      });
+      cfnPool.addPropertyDeletionOverride("LambdaConfig.PreTokenGeneration");
     }
 
     // -----------------------------------------------------------------------
