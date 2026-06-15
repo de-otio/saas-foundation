@@ -365,7 +365,15 @@ export class MagicLinkAuthSite extends Construct {
     // logs:* — Mandatory Mitigation 1 strips it.
     // -------------------------------------------------------------------
     const checkAuthFn = new cloudfront.experimental.EdgeFunction(this, "CheckAuthFn", {
-      runtime: lambda.Runtime.NODEJS_20_X,
+      // NODEJS_22_X (not _20_X): the inlined bundle pulls in undici, whose
+      // request internals destructure `markAsUncloneable` from
+      // `node:worker_threads` — a Node 22.5+ API. On the node20 runtime that is
+      // undefined and the function dies on init with
+      // `Vt.util.markAsUncloneable is not a function`, returning 503
+      // LambdaExecutionError. Lambda@Edge supports the current node22 runtime
+      // (the SES/auth-site sibling functions already use it), so run check-auth
+      // there too. The bundle is built with target node22 to match.
+      runtime: lambda.Runtime.NODEJS_22_X,
       handler: "index.handler",
       code: lambda.Code.fromAsset(bundlePaths["check-auth"]),
     });

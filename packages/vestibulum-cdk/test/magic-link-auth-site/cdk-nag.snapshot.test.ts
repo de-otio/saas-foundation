@@ -13,8 +13,9 @@
  *   doesn't otherwise need. Acknowledged.
  * - AwsSolutions-CFR4: viewer cert TLSv1.2_2021 is the AWS recommended
  *   minimum (not TLSv1.2_2021_BIDI). Acknowledged.
- * - AwsSolutions-L1: the Lambda runtimes (NODEJS_22_X, NODEJS_20_X for
- *   L@E) match the documented bundle pipeline. Acknowledged.
+ * - AwsSolutions-L1: the Lambda runtimes (NODEJS_22_X, including the
+ *   check-auth Lambda@Edge) match the documented bundle pipeline.
+ *   Acknowledged.
  * - AwsSolutions-IAM5: the regional auth Lambdas hold `dynamodb:*` on
  *   the test stack's mock tables — the wildcard is scoped to the
  *   specific table ARNs by the CDK grant helpers.

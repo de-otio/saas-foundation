@@ -1,5 +1,21 @@
 # @de-otio/vestibulum-cdk
 
+## 0.3.8
+
+### Patch Changes
+
+- Run the `MagicLinkAuthSite` check-auth Lambda@Edge function on `NODEJS_22_X`
+  (was `NODEJS_20_X`). The inlined bundle pulls in undici, whose request
+  internals destructure `markAsUncloneable` from `node:worker_threads` — a Node
+  22.5+ API. On the node20 runtime that symbol is `undefined`, so the function
+  died on init with `TypeError: ...markAsUncloneable is not a function` and
+  CloudFront returned `503 LambdaExecutionError` on every request (this was the
+  next failure exposed once the 0.3.7 dynamic-require crash was fixed).
+
+  Lambda@Edge supports the current node22 runtime, so check-auth now runs there;
+  the edge bundle's esbuild `target` is bumped from `node20` to `node22` to match
+  (all 12 bundles rebuilt, lock regenerated).
+
 ## 0.3.7
 
 ### Patch Changes
