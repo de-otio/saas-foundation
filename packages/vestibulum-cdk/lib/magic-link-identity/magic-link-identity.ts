@@ -775,7 +775,9 @@ export class MagicLinkIdentity extends Construct {
       }),
     );
 
-    this.tokenTable.grantWriteData(this.verifyAuthFn);
+    // VerifyAuthChallenge reads the token row (GetItem) to validate the
+    // submitted token, then consumes it (DeleteItem) — needs read AND write.
+    this.tokenTable.grantReadWriteData(this.verifyAuthFn);
 
     this.denylistTable.grantWriteData(this.bounceHandlerFn);
     hmacSecret.grantRead(this.bounceHandlerFn);

@@ -1,5 +1,16 @@
 # @de-otio/vestibulum-cdk
 
+## 0.3.14
+
+### Patch Changes
+
+- Grant the VerifyAuthChallenge trigger read access to the token table. It does a
+  `GetItem` to validate the submitted magic-link token before consuming it
+  (`DeleteItem`), but the construct only granted write, so Cognito returned
+  `VerifyAuthChallengeResponse failed: ... not authorized to perform
+dynamodb:GetItem on ... TokenTable`. Changed `grantWriteData` →
+  `grantReadWriteData`.
+
 ## 0.3.13
 
 ### Patch Changes
