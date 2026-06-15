@@ -32,8 +32,8 @@
       "filename": "create-auth/index.mjs"
     },
     "define-auth": {
-      "sha256": "sha256:5df5a60d81cc3b0219670fcc6aa2ab1d7138177737275992bcd3f09ddbddd9ea",
-      "sizeBytes": 1232310,
+      "sha256": "sha256:cf83724a0fae645af42af8935674b19527693b8e4abcd787a1444ed5f728955c",
+      "sizeBytes": 1232316,
       "filename": "define-auth/index.mjs"
     },
     "post-confirmation": {

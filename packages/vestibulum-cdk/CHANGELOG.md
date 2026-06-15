@@ -1,5 +1,19 @@
 # @de-otio/vestibulum-cdk
 
+## 0.3.11
+
+### Patch Changes
+
+- Make the DefineAuthChallenge Cognito trigger handler `async`. It was the only
+  synchronous handler, and the AWS Lambda Node.js runtime **ignores the return
+  value of a non-async handler** (a sync handler must use the `callback`
+  argument). So the trigger resolved to `null`, and Cognito rejected the
+  CUSTOM_AUTH flow at `InitiateAuth` with `InvalidLambdaResponseException: Invalid
+lambda function output : Invalid JSON` — magic-link sign-in could never start.
+  Returning a Promise makes the runtime await and return the populated event.
+  The handler had no unit test (which is how it shipped sync); added coverage
+  that pins both the state-machine output and that the handler is async.
+
 ## 0.3.10
 
 ### Patch Changes

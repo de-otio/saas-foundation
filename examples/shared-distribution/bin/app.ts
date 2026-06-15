@@ -10,12 +10,6 @@
  */
 import "source-map-support/register";
 import * as cdk from "aws-cdk-lib";
-import { Aspects } from "aws-cdk-lib";
-import {
-  DotTaggingAspect,
-  validateRequiredTags,
-  type Environment,
-} from "@de-otio/cdk-tags";
 
 import { ExampleStack } from "../lib/example-stack.js";
 
@@ -31,30 +25,10 @@ const env: cdk.Environment = {
     : {}),
 };
 
-// Deployment stage for the canonical `dot:environment` cost-allocation
-// tag. Select with `-c env=dev|staging|prod`; defaults to `dev` so the
-// example synthesises cleanly without extra context.
-const stage = (app.node.tryGetContext("env") ?? "dev") as Environment;
-
 new ExampleStack(app, "SharedDistributionExample", {
   env,
   description:
     "Example: SharedDistributionIdentity (multi-tenant shared-pool topology).",
 });
-
-// Apply the shared de-otio `dot:` cost-allocation tagging convention via
-// @de-otio/cdk-tags (the foundation-cdk library still exports its own
-// HouseTaggingAspect for library consumers; this example now standardises
-// on the shared aspect). `validateRequiredTags` fails synth if any stack
-// was left untagged.
-Aspects.of(app).add(
-  new DotTaggingAspect({
-    entity: "de_otio",
-    workstream: "saas_foundation",
-    project: "saas-foundation",
-    environment: stage,
-  }),
-);
-validateRequiredTags(app);
 
 app.synth();

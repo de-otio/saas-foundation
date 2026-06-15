@@ -41,12 +41,17 @@ export interface DefineAuthChallengeEvent {
  * challenge round per session — on failure, immediately fails authentication
  * without offering a retry. This prevents iterative token-guessing attacks.
  *
- * The factory accepts no dependencies (the handler is synchronous and pure
- * except for reading the event). The factory pattern is used for API
- * symmetry with the other handlers.
+ * The handler is logically pure (it only reads the event), but it is declared
+ * `async` deliberately: the AWS Lambda Node.js runtime **ignores the return
+ * value of a non-async handler** (a synchronous handler must use the
+ * `callback` argument), so a sync handler would resolve to `null` and Cognito
+ * would reject it with `InvalidLambdaResponseException: Invalid JSON`. Async
+ * makes the runtime await and return the populated event.
  */
 export function createDefineAuthChallengeHandler() {
-  return function handler(event: DefineAuthChallengeEvent): DefineAuthChallengeEvent {
+  return async function handler(
+    event: DefineAuthChallengeEvent,
+  ): Promise<DefineAuthChallengeEvent> {
     const session = event.request.session;
 
     if (session.length === 0) {

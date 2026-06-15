@@ -11,7 +11,6 @@
     "destroy": "cdk destroy"
   },
   "dependencies": {
-    "@de-otio/cdk-tags": "file:../../../cdk-tags",
     "@de-otio/saas-foundation": "file:../../packages/foundation",
     "@de-otio/saas-foundation-cdk": "file:../../packages/foundation-cdk",
     "@de-otio/vestibulum": "file:../../packages/vestibulum",
