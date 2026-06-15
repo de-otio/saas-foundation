@@ -8,6 +8,7 @@
 import * as cdk from "aws-cdk-lib";
 import { Match, Template } from "aws-cdk-lib/assertions";
 import * as cognito from "aws-cdk-lib/aws-cognito";
+import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as route53 from "aws-cdk-lib/aws-route53";
 import { beforeAll, describe, expect, it } from "vitest";
 
@@ -655,5 +656,55 @@ describe("MagicLinkIdentity — addAppClient (regression: method shipped missing
     const identity = new MagicLinkIdentity(stack, "Identity", defaultProps(stack));
     const guard: IMagicLinkIdentity["addAppClient"] = identity.addAppClient.bind(identity);
     expect(typeof guard).toBe("function");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// preTokenGeneration trigger version (V1 default / V2_0 override)
+//
+// The CDK L2 `lambdaTriggers.preTokenGeneration` wires the trigger as V1_0; a
+// handler returning the V2 response shape needs PreTokenGenerationConfig
+// LambdaVersion = V2_0 or Cognito silently drops its claims.
+// ---------------------------------------------------------------------------
+
+describe("MagicLinkIdentity — preTokenGeneration trigger version", () => {
+  function preTokenFn(stack: cdk.Stack): lambda.Function {
+    return new lambda.Function(stack, "PreTokenFn", {
+      runtime: lambda.Runtime.NODEJS_22_X,
+      handler: "index.handler",
+      code: lambda.Code.fromInline("exports.handler = async (e) => e;"),
+    });
+  }
+
+  it("does NOT force V2_0 by default (V1 trigger)", () => {
+    const stack = makeStack("PreTokenV1Stack");
+    new MagicLinkIdentity(stack, "Identity", {
+      ...defaultProps(stack),
+      preTokenGeneration: preTokenFn(stack),
+    });
+    const template = Template.fromStack(stack);
+    template.hasResourceProperties("AWS::Cognito::UserPool", {
+      LambdaConfig: Match.not(
+        Match.objectLike({
+          PreTokenGenerationConfig: Match.objectLike({ LambdaVersion: "V2_0" }),
+        }),
+      ),
+    });
+  });
+
+  it("sets PreTokenGenerationConfig.LambdaVersion=V2_0 when requested", () => {
+    const stack = makeStack("PreTokenV2Stack");
+    new MagicLinkIdentity(stack, "Identity", {
+      ...defaultProps(stack),
+      preTokenGeneration: preTokenFn(stack),
+      preTokenGenerationVersion: "V2_0",
+      featureTier: "Essentials",
+    });
+    const template = Template.fromStack(stack);
+    template.hasResourceProperties("AWS::Cognito::UserPool", {
+      LambdaConfig: Match.objectLike({
+        PreTokenGenerationConfig: Match.objectLike({ LambdaVersion: "V2_0" }),
+      }),
+    });
   });
 });

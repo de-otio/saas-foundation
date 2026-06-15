@@ -356,6 +356,19 @@ export interface MagicLinkIdentityProps {
   readonly preTokenGeneration?: lambda.IFunction;
 
   /**
+   * Trigger version for `preTokenGeneration`. Defaults to `'V1_0'`.
+   *
+   * Set `'V2_0'` when the handler returns the V2 response shape
+   * (`claimsAndScopeOverrideDetails`, which can add claims to BOTH the id and
+   * access tokens). The CDK L2 `lambdaTriggers.preTokenGeneration` always wires
+   * the trigger as `V1_0`, so a V2 handler's response is silently ignored and
+   * its claims never land. `'V2_0'` requires the pool feature plan to be
+   * `Essentials` or `Plus` (`featureTier`). No effect when `preTokenGeneration`
+   * is not set.
+   */
+  readonly preTokenGenerationVersion?: "V1_0" | "V2_0";
+
+  /**
    * Optional consumer-supplied `PostConfirmation` Lambda.
    */
   readonly postConfirmation?: lambda.IFunction;
@@ -1096,6 +1109,18 @@ export class MagicLinkIdentity extends Construct {
 
     if (props.featureTier !== undefined) {
       cfnPool.userPoolTier = props.featureTier;
+    }
+
+    // PreTokenGeneration trigger version. The L2 `lambdaTriggers` wires the
+    // trigger as V1_0; a V2 handler (claimsAndScopeOverrideDetails) needs the
+    // pool's PreTokenGenerationConfig.LambdaVersion set to V2_0, or Cognito
+    // silently drops its claims. Override the L1 here when requested. (V2_0
+    // requires an Essentials/Plus feature plan.)
+    if (props.preTokenGeneration && props.preTokenGenerationVersion === "V2_0") {
+      cfnPool.addPropertyOverride(
+        "LambdaConfig.PreTokenGenerationConfig.LambdaVersion",
+        "V2_0",
+      );
     }
 
     // -----------------------------------------------------------------------

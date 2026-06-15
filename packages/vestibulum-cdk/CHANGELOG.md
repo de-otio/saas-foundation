@@ -1,5 +1,17 @@
 # @de-otio/vestibulum-cdk
 
+## 0.3.16
+
+### Patch Changes
+
+- Add `preTokenGenerationVersion` to `MagicLinkIdentity` (`'V1_0' | 'V2_0'`,
+  default `'V1_0'`). The CDK L2 `lambdaTriggers.preTokenGeneration` always wires
+  the trigger as V1, so a handler returning the V2 response shape
+  (`claimsAndScopeOverrideDetails`) had its claims silently dropped by Cognito —
+  custom claims like `read_spaces`/`tenant_id` never reached the issued tokens.
+  Setting `'V2_0'` overrides the pool's `PreTokenGenerationConfig.LambdaVersion`
+  (requires an `Essentials`/`Plus` feature plan).
+
 ## 0.3.15
 
 ### Patch Changes
