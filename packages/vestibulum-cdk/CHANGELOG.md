@@ -1,5 +1,19 @@
 # @de-otio/vestibulum-cdk
 
+## 0.3.4
+
+### Patch Changes
+
+- Fix two bugs that made `MagicLinkAuthSite` unusable as published:
+  - The package `files` list omitted `login-pages/`, so `MagicLinkAuthSite`'s
+    `BucketDeployment` failed at synth with `CannotFindAsset`. The login pages
+    are now shipped in the tarball.
+  - `MagicLinkIdentity` never implemented `addAppClient`, although its
+    `IMagicLinkIdentity` interface declares it and `MagicLinkAuthSite` calls it
+    to create the website client. The method is now implemented (CUSTOM_AUTH
+    forced on, password/SRP off, `generateSecret: true` rejected) with test
+    coverage and a signature guard.
+
 ## 0.3.3
 
 ### Patch Changes

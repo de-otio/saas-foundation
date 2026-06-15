@@ -7,6 +7,7 @@
 
 import * as cdk from "aws-cdk-lib";
 import { Match, Template } from "aws-cdk-lib/assertions";
+import * as cognito from "aws-cdk-lib/aws-cognito";
 import * as route53 from "aws-cdk-lib/aws-route53";
 import { beforeAll, describe, expect, it } from "vitest";
 
@@ -15,6 +16,7 @@ import {
   MagicLinkIdentityPropsError,
   type MagicLinkIdentityProps,
 } from "../../lib/magic-link-identity/index.js";
+import type { IMagicLinkIdentity } from "../../lib/_internal/identity-handle.js";
 
 const TEST_ENV = { account: "123456789012", region: "eu-west-1" };
 
@@ -457,5 +459,49 @@ describe("MagicLinkIdentity — costDosGuard (S7)", () => {
           costDosGuard: { enabled: true, sendsPerHourCap: Number.NaN },
         }),
     ).toThrowError(/sendsPerHourCap/);
+  });
+});
+
+describe("MagicLinkIdentity — addAppClient (regression: method shipped missing in 0.3.3)", () => {
+  it("creates a public app client with CUSTOM_AUTH on and password flows off", () => {
+    const stack = makeStack("AddAppClientStack");
+    const identity = new MagicLinkIdentity(stack, "Identity", defaultProps(stack));
+    identity.addAppClient("WebsiteClient", {
+      oauth: {
+        flows: { authorizationCodeGrant: true },
+        scopes: [cognito.OAuthScope.OPENID, cognito.OAuthScope.EMAIL],
+        callbackUrls: ["https://app.example.com/login/callback"],
+      },
+      generateSecret: false,
+    });
+    const template = Template.fromStack(stack);
+    template.hasResourceProperties("AWS::Cognito::UserPoolClient", {
+      ExplicitAuthFlows: Match.arrayWith(["ALLOW_CUSTOM_AUTH"]),
+      GenerateSecret: false,
+      AllowedOAuthFlows: ["code"],
+    });
+    // Password / SRP flows must be off — this is a public magic-link client.
+    template.hasResourceProperties("AWS::Cognito::UserPoolClient", {
+      ExplicitAuthFlows: Match.not(Match.arrayWith(["ALLOW_USER_PASSWORD_AUTH"])),
+    });
+  });
+
+  it("rejects generateSecret: true (vestibulum app clients are public)", () => {
+    const stack = makeStack("AddAppClientSecretStack");
+    const identity = new MagicLinkIdentity(stack, "Identity", defaultProps(stack));
+    expect(() => identity.addAppClient("ConfidentialClient", { generateSecret: true })).toThrowError(
+      /generateSecret/,
+    );
+  });
+
+  it("matches the IMagicLinkIdentity.addAppClient signature (compile-time guard)", () => {
+    // 0.3.3 shipped this method missing; exactOptionalPropertyTypes prevents a
+    // full `implements IMagicLinkIdentity` (Table vs ITable), so this guards
+    // the one member that regressed. `.bind` keeps the type check while
+    // avoiding the unbound-method lint.
+    const stack = makeStack("AddAppClientGuardStack");
+    const identity = new MagicLinkIdentity(stack, "Identity", defaultProps(stack));
+    const guard: IMagicLinkIdentity["addAppClient"] = identity.addAppClient.bind(identity);
+    expect(typeof guard).toBe("function");
   });
 });

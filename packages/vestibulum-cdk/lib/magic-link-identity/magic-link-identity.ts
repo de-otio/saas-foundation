@@ -67,6 +67,8 @@ import {
   type CostDosGuardProps,
   type CostDosGuardResources,
 } from "../_internal/cost-dos-guard.js";
+import { buildAppClientOptions } from "../app-clients/index.js";
+import type { AddAppClientProps } from "../_internal/identity-handle.js";
 
 // ---------------------------------------------------------------------------
 // Bundle-path resolution
@@ -385,6 +387,12 @@ export interface IdentityConfigMetadata {
  * vestibulum-cdk versions — they are part of the public CloudFormation
  * contract.
  */
+// NOTE: this class intentionally does NOT use `implements IMagicLinkIdentity`.
+// Under `exactOptionalPropertyTypes`, CDK's concrete `dynamodb.Table` is not
+// assignable to `dynamodb.ITable` (the `tableStreamArn` optionality differs),
+// so an `implements` clause fails to compile. The `addAppClient` method below
+// matches `IMagicLinkIdentity.addAppClient`; a compile-time guard in the test
+// suite asserts that signature (this is the method 0.3.3 shipped missing).
 export class MagicLinkIdentity extends Construct {
   /** The Cognito User Pool backing the magic-link auth flow. */
   readonly cognitoPool: cognito.UserPool;
@@ -905,6 +913,37 @@ export class MagicLinkIdentity extends Construct {
       }
     }
     return result;
+  }
+
+  /**
+   * Adds a Cognito app client with magic-link-compatible auth flows.
+   *
+   * CUSTOM_AUTH is always enabled and password / SRP flows are always
+   * disabled (via {@link buildAppClientOptions}); `generateSecret: true`
+   * is rejected — vestibulum app clients are public (SPA / browser).
+   *
+   * Implements {@link IMagicLinkIdentity.addAppClient}; `MagicLinkAuthSite`
+   * calls this to provision its website client.
+   */
+  addAppClient(id: string, props: AddAppClientProps): cognito.UserPoolClient {
+    const options = buildAppClientOptions({
+      federationEnabled: this.federationEnabled,
+      defaultIdTokenValidity: this.defaultIdTokenValidity,
+      defaultRefreshTokenValidity: this.defaultRefreshTokenValidity,
+      props: {
+        ...(props.oauth !== undefined && { oAuth: props.oauth }),
+        ...(props.generateSecret !== undefined && {
+          generateSecret: props.generateSecret,
+        }),
+        ...(props.idTokenValidity !== undefined && {
+          idTokenValidity: props.idTokenValidity,
+        }),
+        ...(props.refreshTokenValidity !== undefined && {
+          refreshTokenValidity: props.refreshTokenValidity,
+        }),
+      },
+    });
+    return this.cognitoPool.addClient(id, options);
   }
 }
 
