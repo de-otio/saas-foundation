@@ -11,8 +11,9 @@
 
 import { DynamoDBClient, PutItemCommand } from '@aws-sdk/client-dynamodb';
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
-import { createHash, createHmac, randomBytes } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import { loadClientConfigByClientId } from '../shared/client-config-loader.js';
+import { hmacEmail, resolveEmailHmacKeyFromEnv } from '../../shared/email-hmac.js';
 import { isDenylisted } from '../../handlers/create-auth-challenge/quarantine-check.js';
 import { tryConsumeRateLimit, DEFAULT_SENDS_PER_WINDOW } from '../../handlers/create-auth-challenge/rate-limit.js';
 
@@ -133,9 +134,12 @@ export function createSharedCreateAuthChallengeHandler(deps: CreateAuthChallenge
     const ddb = getDdb();
     const ses = getSes();
     const now = deps.nowMs?.() ?? Date.now();
+    // Shared email-HMAC key (resolved value, not the Secrets Manager id) — used
+    // for both the denylist key and the token-row `email_hmac`.
+    const hmacKey = await resolveEmailHmacKeyFromEnv();
 
     // Denylist check.
-    if (await isDenylisted(ddb, denylistTable, email)) {
+    if (await isDenylisted(ddb, denylistTable, email, hmacKey)) {
       return failClosedChallenge(event, email, 'denylisted');
     }
 
@@ -157,10 +161,7 @@ export function createSharedCreateAuthChallengeHandler(deps: CreateAuthChallenge
     const hash = tokenHash(token);
 
     const ttlEpochSeconds = Math.floor(now / 1000) + ttlMinutes * 60;
-    const hmacSecret = process.env['VESTIBULUM_BOUNCE_HMAC_SECRET'] ?? '';
-    const emailHmac = hmacSecret
-      ? createHmac('sha256', hmacSecret).update(email.toLowerCase()).digest('hex')
-      : '';
+    const emailHmac = hmacKey ? hmacEmail(email, hmacKey) : '';
 
     await ddb.send(
       new PutItemCommand({

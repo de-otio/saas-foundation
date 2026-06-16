@@ -16,14 +16,19 @@ import {
   GetItemCommand,
   ResourceNotFoundException,
 } from "@aws-sdk/client-dynamodb";
-import { createHash } from "crypto";
+
+import { hmacEmail } from "../../shared/email-hmac.js";
 
 /**
  * Returns true if the email is on the denylist.
  *
- * The denylist primary key is `SHA-256(lowercased-email)` — we never store the
- * raw address in the denylist row's PK so a snapshot of the table doesn't
- * leak the address list. The bounce-handler writes the same hash.
+ * The denylist primary key is `HMAC-SHA-256(lowercased-email, sharedKey)` — we
+ * never store the raw address in the denylist row's PK so a snapshot of the
+ * table doesn't leak the address list, and the HMAC key (not just the hash)
+ * keeps the low-entropy email space un-brute-forceable from a snapshot. The
+ * bounce-handler MUST write with the same {@link hmacEmail} and key, or this
+ * read silently never matches (the original bug: write used keyed HMAC, read
+ * used a plain unkeyed sha256).
  *
  * A missing table is treated as "denylist disabled" — the construct creates
  * the table unconditionally, so this only happens in tests where the env var
@@ -33,12 +38,13 @@ export async function isDenylisted(
   client: DynamoDBClient,
   tableName: string | undefined,
   email: string,
+  hmacKey: string,
 ): Promise<boolean> {
   if (tableName === undefined || tableName === "") {
     return false;
   }
 
-  const emailHash = createHash("sha256").update(email.toLowerCase()).digest("hex");
+  const emailHash = hmacEmail(email, hmacKey);
 
   try {
     const result = await client.send(

@@ -20,14 +20,20 @@
  *     CI gate.
  */
 
-import { createHmac } from "crypto";
 import {
   CognitoIdentityProviderClient,
   AdminUpdateUserAttributesCommand,
   UserNotFoundException,
 } from "@aws-sdk/client-cognito-identity-provider";
 import { DynamoDBClient, PutItemCommand } from "@aws-sdk/client-dynamodb";
+import { hmacEmail, resolveEmailHmacKeyFromEnv } from "../../shared/email-hmac.js";
 import { RuntimeEnv } from "../../shared/runtime-env.js";
+
+// Re-exported for backward compatibility; the canonical implementation (which
+// lowercases the address — the bounce-handler historically did not, so its
+// denylist writes never matched the lowercasing quarantine-check reads) now
+// lives in the shared module so write and read cannot drift.
+export { hmacEmail };
 
 /** SES notification type discriminant. */
 type SesNotificationType = "Bounce" | "Complaint" | "Delivery";
@@ -88,13 +94,14 @@ const CW_NAMESPACE = "Vestibulum/Identity";
 export interface BounceHandlerDeps {
   readonly cognitoClient?: CognitoIdentityProviderClient;
   readonly dynamoClient?: DynamoDBClient;
-}
-
-/**
- * Compute an HMAC-SHA-256 hash of an email address.
- */
-export function hmacEmail(email: string, secret: string): string {
-  return createHmac("sha256", secret).update(email).digest("hex");
+  /**
+   * Resolve the email-HMAC key used for the denylist write and log redaction.
+   * Defaults to fetching from Secrets Manager via the id in
+   * `VESTIBULUM_BOUNCE_HMAC_SECRET` (cached per warm container). MUST resolve to
+   * the same value quarantine-check uses, or denylisted addresses are never
+   * matched. Injected in tests.
+   */
+  readonly resolveHmacKey?: () => Promise<string>;
 }
 
 /**
@@ -230,14 +237,15 @@ export function createBounceHandler(deps: BounceHandlerDeps = {}) {
   return async function handler(event: SnsEvent): Promise<void> {
     const userPoolId = process.env[RuntimeEnv.COGNITO_USER_POOL_ID];
     const denylistTableName = process.env[RuntimeEnv.DENYLIST_TABLE_NAME];
-    const hmacSecret = process.env[RuntimeEnv.BOUNCE_HMAC_SECRET];
+    // Resolve the actual secret value (the env var holds the Secrets Manager id,
+    // not the value). Empty means the secret id env var is unset.
+    const hmacSecret = await (deps.resolveHmacKey ?? resolveEmailHmacKeyFromEnv)();
 
     if (
       userPoolId === undefined ||
       userPoolId === "" ||
       denylistTableName === undefined ||
       denylistTableName === "" ||
-      hmacSecret === undefined ||
       hmacSecret === ""
     ) {
       throw new Error(

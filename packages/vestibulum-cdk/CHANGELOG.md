@@ -1,5 +1,35 @@
 # @de-otio/vestibulum-cdk
 
+## 0.3.18
+
+### Patch Changes
+
+- Fix three related defects in magic-link email hashing that made the bounce/
+  complaint denylist non-functional and the `email_hmac` pepper effectively
+  public.
+
+  - **HMAC keyed on the secret id, not its value.** `VESTIBULUM_BOUNCE_HMAC_SECRET`
+    holds the Secrets Manager **id** (ARN), and the handlers used that string
+    directly as the HMAC key — so the pepper was low-entropy and effectively
+    public (the ARN appears in IAM policies, the console, CloudFormation), letting
+    anyone who knows it brute-force the low-entropy email space from a table
+    snapshot. The key is now resolved from Secrets Manager at runtime via
+    `GetSecretValue` (cached per warm container), and `MagicLinkIdentity` grants
+    `secretsmanager:GetSecretValue` to CreateAuthChallenge and
+    VerifyAuthChallengeResponse (the bounce handler already had it).
+  - **Denylist read/write hashed differently.** The bounce handler wrote denylist
+    entries with a keyed HMAC, but the CreateAuthChallenge quarantine check read
+    with a plain **unkeyed** `sha256` — so a bounced/complained address was never
+    actually blocked from requesting new magic links.
+  - **Inconsistent canonicalisation.** The bounce-handler write did not lowercase
+    the address while the reads did, so a mixed-case address would have escaped the
+    denylist even once the keys matched.
+
+  All email hashing now funnels through one canonical `hmacEmail(email, key)` that
+  always lowercases and always keys, so the issue/verify and write/read sides
+  cannot drift. Adds regression tests covering lowercasing, keying, the per-warm-
+  container cache, and read==write equality across mixed case.
+
 ## 0.3.17
 
 ### Patch Changes

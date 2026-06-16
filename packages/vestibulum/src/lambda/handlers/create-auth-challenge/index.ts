@@ -24,8 +24,9 @@
 
 import { DynamoDBClient, PutItemCommand } from "@aws-sdk/client-dynamodb";
 import { SESClient } from "@aws-sdk/client-ses";
-import { createHash, createHmac, randomBytes } from "crypto";
+import { createHash, randomBytes } from "crypto";
 
+import { hmacEmail, resolveEmailHmacKeyFromEnv } from "../../shared/email-hmac.js";
 import { RuntimeEnv } from "../../shared/runtime-env.js";
 import { GENERIC_AUTH_ERROR } from "../verify-auth-challenge/errors.js";
 import { sendMagicLinkEmail } from "./magic-link-email.js";
@@ -58,24 +59,22 @@ export interface CreateAuthChallengeHandlerDeps {
   readonly ses?: SESClient;
   readonly nowMs?: () => number;
   readonly randomToken?: () => Buffer;
+  /**
+   * Resolve the email-HMAC key. Defaults to reading the secret id from
+   * `VESTIBULUM_BOUNCE_HMAC_SECRET` and fetching the value from Secrets Manager
+   * (cached per warm container). Injected in tests to avoid a real fetch.
+   */
+  readonly resolveHmacKey?: () => Promise<string>;
 }
 
-/**
- * Name of the env var holding the HMAC secret used to hash emails before
- * they hit any log line or the `email_hmac` token-row attribute.
- * Uses `RuntimeEnv.BOUNCE_HMAC_SECRET` for the env-var name.
- */
-const HMAC_SECRET_ENV = RuntimeEnv.BOUNCE_HMAC_SECRET;
-
-function hmacEmailForLogs(email: string): string {
-  const secret = process.env[HMAC_SECRET_ENV];
-  if (secret === undefined || secret === "") {
+function hmacEmailForLogs(email: string, hmacKey: string): string {
+  if (hmacKey === "") {
     // No secret configured — log a fixed placeholder rather than the address.
     // This keeps the log line shape stable for grep-based PII tests without
     // ever emitting the raw email.
     return "email:hmac-disabled";
   }
-  return `email:${createHmac("sha256", secret).update(email.toLowerCase()).digest("hex").slice(0, 16)}`;
+  return `email:${hmacEmail(email, hmacKey).slice(0, 16)}`;
 }
 
 /** sha256 of the token, hex-encoded. */
@@ -88,6 +87,7 @@ function failClosedChallenge(
   event: CreateAuthChallengeEvent,
   email: string,
   reason: string,
+  hmacKey: string,
 ): CreateAuthChallengeEvent {
   event.response.publicChallengeParameters = {
     email,
@@ -103,7 +103,7 @@ function failClosedChallenge(
     JSON.stringify({
       msg: "create_auth_challenge.fail_closed",
       reason,
-      email: hmacEmailForLogs(email),
+      email: hmacEmailForLogs(email, hmacKey),
     }),
   );
   return event;
@@ -161,9 +161,14 @@ export function createCreateAuthChallengeHandler(deps: CreateAuthChallengeHandle
     const ses = getSesClient();
     const now = deps.nowMs?.() ?? Date.now();
 
+    // Resolve the shared email-HMAC key once (cached per warm container). Used
+    // for the denylist key, the token-row `email_hmac`, and log redaction —
+    // they MUST all agree on this key, so resolve it here and thread it down.
+    const hmacKey = await (deps.resolveHmacKey ?? resolveEmailHmacKeyFromEnv)();
+
     // -- 1. Denylist (bounce circuit breaker) ----------------------------------
-    if (await isDenylisted(dynamodb, denylistTable, email)) {
-      return failClosedChallenge(event, email, "denylisted");
+    if (await isDenylisted(dynamodb, denylistTable, email, hmacKey)) {
+      return failClosedChallenge(event, email, "denylisted", hmacKey);
     }
 
     // -- 2. Rate limit ---------------------------------------------------------
@@ -175,7 +180,7 @@ export function createCreateAuthChallengeHandler(deps: CreateAuthChallengeHandle
       nowMs: now,
     });
     if (!allowed) {
-      return failClosedChallenge(event, email, "rate_limited");
+      return failClosedChallenge(event, email, "rate_limited", hmacKey);
     }
 
     // -- 3. Generate token + store hash ----------------------------------------
@@ -184,10 +189,7 @@ export function createCreateAuthChallengeHandler(deps: CreateAuthChallengeHandle
     const hash = tokenHash(token);
 
     const ttlEpochSeconds = Math.floor(now / 1000) + ttlMinutes * 60;
-    const emailHmacSecret = process.env[HMAC_SECRET_ENV] ?? "";
-    const emailHmac = emailHmacSecret
-      ? createHmac("sha256", emailHmacSecret).update(email.toLowerCase()).digest("hex")
-      : "";
+    const emailHmac = hmacKey ? hmacEmail(email, hmacKey) : "";
 
     await dynamodb.send(
       new PutItemCommand({
@@ -227,7 +229,7 @@ export function createCreateAuthChallengeHandler(deps: CreateAuthChallengeHandle
     console.log(
       JSON.stringify({
         msg: "create_auth_challenge.sent",
-        email: hmacEmailForLogs(email),
+        email: hmacEmailForLogs(email, hmacKey),
       }),
     );
 

@@ -33,8 +33,9 @@ import {
   DynamoDBClient,
   GetItemCommand,
 } from "@aws-sdk/client-dynamodb";
-import { createHash, createHmac, timingSafeEqual } from "crypto";
+import { createHash, timingSafeEqual } from "crypto";
 
+import { hmacEmail, resolveEmailHmacKeyFromEnv } from "../../shared/email-hmac.js";
 import { RuntimeEnv } from "../../shared/runtime-env.js";
 import { GENERIC_AUTH_ERROR } from "./errors.js";
 
@@ -62,24 +63,26 @@ export interface VerifyAuthChallengeEvent {
  */
 export interface VerifyAuthChallengeHandlerDeps {
   readonly dynamodb?: DynamoDBClient;
+  /**
+   * Resolve the email-HMAC key (used for the per-row `email_hmac` cross-check
+   * and log redaction). Defaults to fetching from Secrets Manager via the id in
+   * `VESTIBULUM_BOUNCE_HMAC_SECRET` (cached per warm container). MUST resolve to
+   * the same value CreateAuthChallenge used, or every redemption fails the
+   * email cross-check. Injected in tests.
+   */
+  readonly resolveHmacKey?: () => Promise<string>;
 }
 
-/**
- * Name of the env var holding the HMAC secret used for log redaction and
- * the per-row `email_hmac` cross-check.
- */
-const HMAC_SECRET_ENV = RuntimeEnv.BOUNCE_HMAC_SECRET;
-
-function hmacEmailForLogs(email: string | undefined): string {
+function hmacEmailForLogs(email: string | undefined, hmacKey: string): string {
   if (email === undefined || email === "") return "email:none";
-  const secret = process.env[HMAC_SECRET_ENV];
-  if (secret === undefined || secret === "") return "email:hmac-disabled";
-  return `email:${createHmac("sha256", secret).update(email.toLowerCase()).digest("hex").slice(0, 16)}`;
+  if (hmacKey === "") return "email:hmac-disabled";
+  return `email:${hmacEmail(email, hmacKey).slice(0, 16)}`;
 }
 
 function fail(
   event: VerifyAuthChallengeEvent,
   reason: string,
+  hmacKey: string,
   emailForLog?: string,
 ): VerifyAuthChallengeEvent {
   event.response.answerCorrect = false;
@@ -88,7 +91,7 @@ function fail(
     JSON.stringify({
       msg: "verify_auth_challenge.failed",
       reason,
-      email: hmacEmailForLogs(emailForLog),
+      email: hmacEmailForLogs(emailForLog, hmacKey),
     }),
   );
   return event;
@@ -159,23 +162,27 @@ export function createVerifyAuthChallengeResponseHandler(
     const email = params.email;
     const quarantined = params.quarantined === "true";
 
+    // Resolve the shared email-HMAC key once (cached per warm container). MUST
+    // match the key CreateAuthChallenge used to write `email_hmac`.
+    const hmacKey = await (deps.resolveHmacKey ?? resolveEmailHmacKeyFromEnv)();
+
     // -- 1. Quarantined challenge -----------------------------------------------
     if (quarantined) {
-      return fail(event, "quarantined", email);
+      return fail(event, "quarantined", hmacKey, email);
     }
 
     // -- 2. Single-failure-ends-session ----------------------------------------
     const prior = event.request.session ?? [];
     for (const entry of prior) {
       if (entry?.challengeResult === false) {
-        return fail(event, "prior_failure", email);
+        return fail(event, "prior_failure", hmacKey, email);
       }
     }
 
     // -- 3. Validate submitted token shape --------------------------------------
     const submitted = event.request.challengeAnswer;
     if (typeof submitted !== "string" || submitted.length === 0) {
-      return fail(event, "empty_answer", email);
+      return fail(event, "empty_answer", hmacKey, email);
     }
 
     const submittedHash = sha256Hex(submitted);
@@ -191,23 +198,20 @@ export function createVerifyAuthChallengeResponseHandler(
       }),
     );
     if (!lookup.Item) {
-      return fail(event, "no_such_token", email);
+      return fail(event, "no_such_token", hmacKey, email);
     }
 
     // -- 5. Email cross-check ---------------------------------------------------
     const storedEmailHmac = lookup.Item.email_hmac?.S ?? "";
-    const expectedEmailHmac = (() => {
-      const secret = process.env[HMAC_SECRET_ENV];
-      if (secret === undefined || secret === "" || email === undefined || email === "") return "";
-      return createHmac("sha256", secret).update(email.toLowerCase()).digest("hex");
-    })();
+    const expectedEmailHmac =
+      hmacKey === "" || email === undefined || email === "" ? "" : hmacEmail(email, hmacKey);
     if (
       storedEmailHmac.length === 0 ||
       expectedEmailHmac.length === 0 ||
       storedEmailHmac.length !== expectedEmailHmac.length ||
       !timingSafeEqual(Buffer.from(storedEmailHmac, "hex"), Buffer.from(expectedEmailHmac, "hex"))
     ) {
-      return fail(event, "email_mismatch", email);
+      return fail(event, "email_mismatch", hmacKey, email);
     }
 
     // -- 6. Single-use enforcement via conditional DeleteItem ------------------
@@ -222,16 +226,16 @@ export function createVerifyAuthChallengeResponseHandler(
     } catch (err) {
       if (err instanceof ConditionalCheckFailedException) {
         // Lost the race or already redeemed — exactly one winner per token.
-        return fail(event, "already_consumed", email);
+        return fail(event, "already_consumed", hmacKey, email);
       }
       // eslint-disable-next-line no-console
       console.log(
         JSON.stringify({
           msg: "verify_auth_challenge.delete_error",
-          email: hmacEmailForLogs(email),
+          email: hmacEmailForLogs(email, hmacKey),
         }),
       );
-      return fail(event, "delete_error", email);
+      return fail(event, "delete_error", hmacKey, email);
     }
 
     // -- 7. Constant-time compare of the issued hash to the submitted hash ----
@@ -240,7 +244,7 @@ export function createVerifyAuthChallengeResponseHandler(
       expectedHash === "" ||
       !constantTimeHashEqual(expectedHash, submittedHash)
     ) {
-      return fail(event, "hash_mismatch", email);
+      return fail(event, "hash_mismatch", hmacKey, email);
     }
 
     event.response.answerCorrect = true;
@@ -248,7 +252,7 @@ export function createVerifyAuthChallengeResponseHandler(
     console.log(
       JSON.stringify({
         msg: "verify_auth_challenge.success",
-        email: hmacEmailForLogs(email),
+        email: hmacEmailForLogs(email, hmacKey),
       }),
     );
     return event;

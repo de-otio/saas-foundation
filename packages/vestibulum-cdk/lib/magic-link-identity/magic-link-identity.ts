@@ -775,6 +775,12 @@ export class MagicLinkIdentity extends Construct {
     this.tokenTable.grantWriteData(this.createAuthFn);
     this.denylistTable.grantReadData(this.createAuthFn);
     this.rateLimitTable.grantReadWriteData(this.createAuthFn);
+    // CreateAuthChallenge resolves the email-HMAC secret VALUE at runtime (the
+    // env var holds the secret id, not the value) to key the `email_hmac` token
+    // attribute and the denylist lookup. Without this grant the GetSecretValue
+    // call is AccessDenied and every challenge throws. The secret must be keyed
+    // on its real high-entropy value, not the public ARN.
+    hmacSecret.grantRead(this.createAuthFn);
     // CreateAuthChallenge sends the magic-link email via SES SendEmail from the
     // verified sender identity. Without this grant the handler throws and
     // Cognito returns "CreateAuthChallenge failed: ... not authorized to
@@ -791,6 +797,10 @@ export class MagicLinkIdentity extends Construct {
     // VerifyAuthChallenge reads the token row (GetItem) to validate the
     // submitted token, then consumes it (DeleteItem) — needs read AND write.
     this.tokenTable.grantReadWriteData(this.verifyAuthFn);
+    // VerifyAuthChallenge recomputes the email HMAC to cross-check the token row
+    // against the claimed email — needs the same secret VALUE CreateAuthChallenge
+    // used, so it also resolves it at runtime.
+    hmacSecret.grantRead(this.verifyAuthFn);
 
     this.denylistTable.grantWriteData(this.bounceHandlerFn);
     hmacSecret.grantRead(this.bounceHandlerFn);
