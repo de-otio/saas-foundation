@@ -572,10 +572,12 @@ export class MagicLinkAuthSite extends Construct {
     // the extensionless key (`login`, `login/callback`) to S3 and the
     // OAC origin would return 403 for the missing object.
     //
-    // The function name is scoped by region + domain so multiple
-    // AuthSites in one account never collide.
+    // No explicit `functionName`: CDK auto-generates a unique, valid name
+    // (`region` + a bounded hash, capped at 40 chars) that always fits
+    // CloudFront's 64-char function-name limit. A hand-built
+    // `prefix-AuthSiteLoginRewrite-region-domain` name overflows 64 chars for
+    // ordinary domains (e.g. `atrium.dev.de-otio.org` → 66) and fails deploy.
     const loginRewriteFn = new cloudfront.Function(this, "LoginRewriteFn", {
-      functionName: `${this.namespacePrefix}AuthSiteLoginRewrite-${region}-${domain.replace(/\./g, "-")}`,
       comment: `Rewrites /login and /login/callback to their .html objects for ${domain}.`,
       code: cloudfront.FunctionCode.fromInline(
         [

@@ -714,6 +714,22 @@ describe("MagicLinkAuthSite", () => {
       });
     });
 
+    it("gives the rewrite Function a name within CloudFront's 64-char limit", () => {
+      // CloudFront rejects function names longer than 64 chars at deploy time
+      // (a synth-clean template still fails). A hand-built name keyed on the
+      // domain overflows for ordinary domains; CDK's auto-generated name must
+      // stay bounded.
+      const fns = template.findResources("AWS::CloudFront::Function");
+      const names = Object.values(fns)
+        .map((r) => (r.Properties as { Name?: unknown }).Name)
+        .filter((n): n is string => typeof n === "string");
+      expect(names.length).toBeGreaterThan(0);
+      for (const name of names) {
+        expect(name.length).toBeLessThanOrEqual(64);
+        expect(name).toMatch(/^[a-zA-Z0-9_-]{1,64}$/);
+      }
+    });
+
     it("mints a login-scoped response-headers policy allowing the Cognito IDP connect-src", () => {
       template.hasResourceProperties("AWS::CloudFront::ResponseHeadersPolicy", {
         ResponseHeadersPolicyConfig: Match.objectLike({

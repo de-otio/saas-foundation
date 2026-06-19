@@ -1,5 +1,18 @@
 # @de-otio/vestibulum-cdk
 
+## 0.3.20
+
+### Patch Changes
+
+- Fix the login-page CloudFront Function failing to deploy. 0.3.19 set an
+  explicit `functionName` (`<prefix>AuthSiteLoginRewrite-<region>-<domain>`)
+  that overflows CloudFront's 64-char function-name limit for ordinary domains
+  (e.g. `atrium.dev.de-otio.org` → 66 chars), so the stack rolled back with an
+  `InvalidRequest` validation error. The explicit name is dropped; CDK
+  auto-generates a bounded, unique, valid name (`<region>` + a ≤40-char hash).
+  Adds a regression test asserting every CloudFront Function name is ≤64 chars
+  and matches `[a-zA-Z0-9_-]`.
+
 ## 0.3.19
 
 ### Patch Changes
