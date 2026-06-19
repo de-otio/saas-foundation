@@ -25,5 +25,10 @@
     "typescript": "^6.0.3",
     "vitest": "^4.0.0",
     "@vitest/coverage-v8": "^4.0.0"
+  },
+  "overrides": {
+    "read-yaml-file": {
+      "js-yaml": "^4.2.0"
+    }
   }
 }

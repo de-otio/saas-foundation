@@ -377,6 +377,10 @@ module.exports = {
     // .mjs files are plain ESM scripts not part of a TS project; excluded from
     // type-aware linting. Add to a separate non-type-checked eslint config if needed.
     "**/*.mjs",
+    // login-pages/ holds browser-delivered static assets (plain .js shipped to
+    // the magic-link login page), not part of any TS project — excluded from
+    // type-aware linting for the same reason as .mjs above.
+    "packages/*/login-pages/",
     // Fixture files are linted explicitly by CI gate tests, not the normal lint pass
     "packages/*/test/eslint-fixtures/",
   ],
