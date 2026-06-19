@@ -664,4 +664,90 @@ describe("MagicLinkAuthSite", () => {
       }
     });
   });
+
+  describe("login routing: /login* behaviour, URI rewrite, and config injection", () => {
+    let template: Template;
+
+    beforeAll(() => {
+      const stacks = makeSite("AuthSiteLoginRoutingStack");
+      template = Template.fromStack(stacks.stack);
+    });
+
+    /** Returns the distribution's CacheBehaviors array (additional behaviours). */
+    function cacheBehaviors(): Array<{
+      PathPattern: string;
+      FunctionAssociations?: Array<{ EventType: string }>;
+    }> {
+      const dists = template.findResources("AWS::CloudFront::Distribution");
+      const dist = Object.values(dists)[0] as {
+        Properties: { DistributionConfig: { CacheBehaviors?: unknown[] } };
+      };
+      return (dist.Properties.DistributionConfig.CacheBehaviors ?? []) as Array<{
+        PathPattern: string;
+        FunctionAssociations?: Array<{ EventType: string }>;
+      }>;
+    }
+
+    it("serves the login UI under a single /login* behaviour", () => {
+      const patterns = cacheBehaviors().map((b) => b.PathPattern);
+      expect(patterns).toContain("/login*");
+    });
+
+    it("no longer registers the broken exact /login or /login/callback behaviours", () => {
+      const patterns = cacheBehaviors().map((b) => b.PathPattern);
+      expect(patterns).not.toContain("/login");
+      expect(patterns).not.toContain("/login/callback");
+    });
+
+    it("associates a viewer-request CloudFront Function with /login*", () => {
+      const login = cacheBehaviors().find((b) => b.PathPattern === "/login*");
+      expect(login?.FunctionAssociations?.some((a) => a.EventType === "viewer-request")).toBe(true);
+    });
+
+    it("creates a CloudFront Function that rewrites /login and /login/callback to their .html objects", () => {
+      template.hasResourceProperties("AWS::CloudFront::Function", {
+        FunctionConfig: Match.objectLike({ Runtime: Match.anyValue() }),
+        FunctionCode: Match.stringLikeRegexp("/login\\.html"),
+      });
+      template.hasResourceProperties("AWS::CloudFront::Function", {
+        FunctionCode: Match.stringLikeRegexp("/login-callback\\.html"),
+      });
+    });
+
+    it("mints a login-scoped response-headers policy allowing the Cognito IDP connect-src", () => {
+      template.hasResourceProperties("AWS::CloudFront::ResponseHeadersPolicy", {
+        ResponseHeadersPolicyConfig: Match.objectLike({
+          Name: Match.stringLikeRegexp("^VestibulumAuthSiteLogin-"),
+          SecurityHeadersConfig: Match.objectLike({
+            ContentSecurityPolicy: Match.objectLike({
+              ContentSecurityPolicy: Match.stringLikeRegexp(
+                "connect-src 'self' https://cognito-idp\\.[^ ]+\\.amazonaws\\.com",
+              ),
+            }),
+          }),
+        }),
+      });
+    });
+
+    it("keeps the default (app) CSP strict with connect-src 'self'", () => {
+      template.hasResourceProperties("AWS::CloudFront::ResponseHeadersPolicy", {
+        ResponseHeadersPolicyConfig: Match.objectLike({
+          Name: Match.stringLikeRegexp("^VestibulumAuthSite-"),
+          SecurityHeadersConfig: Match.objectLike({
+            ContentSecurityPolicy: Match.objectLike({
+              ContentSecurityPolicy: Match.stringLikeRegexp("connect-src 'self';"),
+            }),
+          }),
+        }),
+      });
+    });
+
+    it("injects a second BucketDeployment source (the deploy-time login-config.json)", () => {
+      const deployments = template.findResources("Custom::CDKBucketDeployment");
+      const deployment = Object.values(deployments)[0] as {
+        Properties: { SourceObjectKeys: unknown[] };
+      };
+      expect(deployment.Properties.SourceObjectKeys.length).toBe(2);
+    });
+  });
 });

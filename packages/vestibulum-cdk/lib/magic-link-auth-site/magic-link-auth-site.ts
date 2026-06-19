@@ -452,7 +452,20 @@ export class MagicLinkAuthSite extends Construct {
 
     const loginPagesDir = path.join(packageRoot, "login-pages");
     new s3deploy.BucketDeployment(this, "LoginPagesDeploy", {
-      sources: [s3deploy.Source.asset(loginPagesDir)],
+      sources: [
+        s3deploy.Source.asset(loginPagesDir),
+        // Deploy-time runtime config for the browser. The login page is a
+        // static asset, so the public website-client id + region (needed for
+        // the browser's Cognito `InitiateAuth` call) are injected here. CDK
+        // substitutes the `userPoolClientId` token at deploy via the bucket
+        // deployment custom resource. Nothing secret: the SPA client has no
+        // secret (`generateSecret: false`), and the client id is public.
+        s3deploy.Source.jsonData("login-config.json", {
+          region,
+          userPoolClientId: this.websiteClient.userPoolClientId,
+          domain,
+        }),
+      ],
       destinationBucket: this.loginPageBucket,
       prune: true,
     });
@@ -460,22 +473,32 @@ export class MagicLinkAuthSite extends Construct {
     // -------------------------------------------------------------------
     // Response-headers policy. Branding suppressible via S-C12.
     // -------------------------------------------------------------------
-    const defaultCsp = [
-      "default-src 'self'",
-      "script-src 'self'",
-      "style-src 'self'",
-      "img-src 'self' data:",
-      "font-src 'self'",
-      "connect-src 'self'",
-      "frame-ancestors 'none'",
-      "base-uri 'self'",
-      "form-action 'self'",
-    ].join("; ");
+    // The default (app) CSP is strict `connect-src 'self'`. The login page,
+    // however, calls Cognito `InitiateAuth` directly from the browser, so it
+    // needs `connect-src` to the regional Cognito IDP endpoint. That
+    // relaxation is scoped to a SEPARATE response-headers policy applied only
+    // to the `/login*` behaviour below — the app keeps `connect-src 'self'`.
+    const cognitoEndpoint = `https://cognito-idp.${region}.amazonaws.com`;
+    const cspWith = (connectSrc: string): string =>
+      [
+        "default-src 'self'",
+        "script-src 'self'",
+        "style-src 'self'",
+        "img-src 'self' data:",
+        "font-src 'self'",
+        `connect-src ${connectSrc}`,
+        "frame-ancestors 'none'",
+        "base-uri 'self'",
+        "form-action 'self'",
+      ].join("; ");
 
-    const responseHeadersPolicy =
-      props.responseHeadersPolicy ??
-      new cloudfront.ResponseHeadersPolicy(this, "ResponseHeadersPolicy", {
-        responseHeadersPolicyName: `${this.namespacePrefix}AuthSite-${region}-${domain.replace(/\./g, "-")}`,
+    const makeResponseHeadersPolicy = (
+      idSuffix: string,
+      nameSuffix: string,
+      csp: string,
+    ): cloudfront.ResponseHeadersPolicy =>
+      new cloudfront.ResponseHeadersPolicy(this, `ResponseHeadersPolicy${idSuffix}`, {
+        responseHeadersPolicyName: `${this.namespacePrefix}AuthSite${nameSuffix}-${region}-${domain.replace(/\./g, "-")}`,
         comment: `Security headers for ${this.namespacePrefix} AuthSite on ${domain}.`,
         securityHeadersBehavior: {
           strictTransportSecurity: {
@@ -485,7 +508,7 @@ export class MagicLinkAuthSite extends Construct {
             override: true,
           },
           contentSecurityPolicy: {
-            contentSecurityPolicy: defaultCsp,
+            contentSecurityPolicy: csp,
             override: true,
           },
           contentTypeOptions: { override: true },
@@ -521,11 +544,53 @@ export class MagicLinkAuthSite extends Construct {
         },
       });
 
+    const responseHeadersPolicy =
+      props.responseHeadersPolicy ?? makeResponseHeadersPolicy("", "", cspWith("'self'"));
+
+    // Login-scoped policy: identical to the default but with the Cognito IDP
+    // endpoint added to `connect-src`. When the consumer supplies their own
+    // policy we reuse it for `/login*` too (their CSP must then permit the
+    // Cognito endpoint); otherwise we mint the relaxed login variant.
+    const loginResponseHeadersPolicy =
+      props.responseHeadersPolicy ??
+      makeResponseHeadersPolicy("Login", "Login", cspWith(`'self' ${cognitoEndpoint}`));
+
     const commonBehavior: Partial<cloudfront.AddBehaviorOptions> = {
       viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
       responseHeadersPolicy,
       cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
     };
+
+    // -------------------------------------------------------------------
+    // Login-page URI rewrite (CloudFront Function, viewer-request).
+    //
+    // The login pages are served under the single `/login*` behaviour
+    // below. The two extensionless *page* routes map to their `.html`
+    // objects; every other key under `/login*` (`/login.css`,
+    // `/login.js`, `/login-callback.js`, `/login-config.json`) passes
+    // through to its real S3 key. Without this, CloudFront would forward
+    // the extensionless key (`login`, `login/callback`) to S3 and the
+    // OAC origin would return 403 for the missing object.
+    //
+    // The function name is scoped by region + domain so multiple
+    // AuthSites in one account never collide.
+    const loginRewriteFn = new cloudfront.Function(this, "LoginRewriteFn", {
+      functionName: `${this.namespacePrefix}AuthSiteLoginRewrite-${region}-${domain.replace(/\./g, "-")}`,
+      comment: `Rewrites /login and /login/callback to their .html objects for ${domain}.`,
+      code: cloudfront.FunctionCode.fromInline(
+        [
+          "function handler(event) {",
+          "  var request = event.request;",
+          "  if (request.uri === '/login') {",
+          "    request.uri = '/login.html';",
+          "  } else if (request.uri === '/login/callback') {",
+          "    request.uri = '/login-callback.html';",
+          "  }",
+          "  return request;",
+          "}",
+        ].join("\n"),
+      ),
+    });
 
     // -------------------------------------------------------------------
     // CloudFront distribution.
@@ -551,15 +616,26 @@ export class MagicLinkAuthSite extends Construct {
         ],
       },
       additionalBehaviors: {
-        "/login": {
+        // One prefix behaviour serves the whole login UI off the login-page
+        // bucket: the `/login` and `/login/callback` page routes (rewritten
+        // to their `.html` objects by `loginRewriteFn`) plus the static
+        // assets `/login.css`, `/login.js`, `/login-callback.js`, and the
+        // deploy-injected `/login-config.json`. The login pages are
+        // unauthenticated (no check-auth Lambda@Edge), so the gate does not
+        // bounce them back to `/login`.
+        "/login*": {
           origin: origins.S3BucketOrigin.withOriginAccessControl(this.loginPageBucket),
           ...commonBehavior,
+          // Override the strict default policy with the login-scoped one that
+          // permits the browser's Cognito `InitiateAuth` connect-src.
+          responseHeadersPolicy: loginResponseHeadersPolicy,
           allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
-        },
-        "/login/callback": {
-          origin: origins.S3BucketOrigin.withOriginAccessControl(this.loginPageBucket),
-          ...commonBehavior,
-          allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
+          functionAssociations: [
+            {
+              function: loginRewriteFn,
+              eventType: cloudfront.FunctionEventType.VIEWER_REQUEST,
+            },
+          ],
         },
         "/auth-verify*": {
           origin: origins.FunctionUrlOrigin.withOriginAccessControl(this.authVerifyUrl),

@@ -1,5 +1,36 @@
 # @de-otio/vestibulum-cdk
 
+## 0.3.19
+
+### Patch Changes
+
+- Make the magic-link login page actually load and function. The CloudFront
+  front door served the login UI but the page never resolved end-to-end.
+
+  - **`/login` returned 403.** The `/login` and `/login/callback` cache
+    behaviours forwarded the extensionless path straight to the S3 login-page
+    bucket via OAC, so CloudFront requested keys `login` / `login/callback`
+    while the objects are `login.html` / `login-callback.html` — the OAC origin
+    answered 403 for the missing key. The two exact behaviours are replaced by a
+    single `/login*` behaviour plus a viewer-request CloudFront **Function** that
+    rewrites `/login → /login.html` and `/login/callback → /login-callback.html`.
+  - **Page assets fell through to the auth gate.** Because the old behaviours
+    were exact matches, the page's own `login.css` / `login.js` resolved to
+    `/login.css` / `/login.js`, which matched the default behaviour and were
+    redirected to `/login` by the check-auth Lambda@Edge. The `/login*` prefix
+    behaviour now serves all login assets without the gate.
+  - **The client logic was missing entirely.** `login.html` / `login-callback.html`
+    referenced `login.js` / `callback.js` that did not exist. Added `login.js`
+    (browser-side Cognito `InitiateAuth` CUSTOM_AUTH → stash `{email, session}`)
+    and `login-callback.js` (read the fragment token, POST `{session,
+    challengeAnswer, email}` to `/auth-verify`, redirect on success). The public
+    website-client id + region are injected at deploy via a `login-config.json`
+    BucketDeployment source.
+  - **Login-scoped CSP.** A separate response-headers policy applied only to
+    `/login*` permits `connect-src` to the regional Cognito IDP endpoint (needed
+    for the browser `InitiateAuth` call); the app's default CSP stays
+    `connect-src 'self'`.
+
 ## 0.3.18
 
 ### Patch Changes
