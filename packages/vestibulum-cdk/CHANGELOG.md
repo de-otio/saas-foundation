@@ -1,5 +1,19 @@
 # @de-otio/vestibulum-cdk
 
+## 0.3.23
+
+### Patch Changes
+
+- Stop CloudFront stripping cookies on the auth endpoints — the last hop of
+  browser sign-in. The `/auth-verify*` and `/auth-signout` behaviours used the
+  managed `CachingDisabled` policy, whose cookie behaviour is `none`; CloudFront
+  therefore removes `Set-Cookie` from origin responses before the viewer (so a
+  successful sign-in returned 200 but set no `id-token` cookie) and strips
+  request cookies before the origin (so sign-out can't read the tokens to
+  revoke). Both behaviours now use a dedicated no-cache cache policy
+  (min/max/default TTL 0) that forwards the `id-token`/`refresh-token` cookies.
+  See AWS docs: "Cache content based on cookies". Adds a synth assertion.
+
 ## 0.3.22
 
 ### Patch Changes

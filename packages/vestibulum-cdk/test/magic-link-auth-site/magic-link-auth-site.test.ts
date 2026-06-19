@@ -204,6 +204,25 @@ describe("MagicLinkAuthSite", () => {
       });
     });
 
+    it("uses a no-cache cookie-forwarding cache policy on the auth endpoints (so Set-Cookie reaches the viewer)", () => {
+      // CachingDisabled (cookie behaviour none) makes CloudFront strip both
+      // request cookies and Set-Cookie responses, breaking sign-in/sign-out.
+      template.hasResourceProperties("AWS::CloudFront::CachePolicy", {
+        CachePolicyConfig: Match.objectLike({
+          MinTTL: 0,
+          MaxTTL: 0,
+          DefaultTTL: 0,
+          ParametersInCacheKeyAndForwardedToOrigin: Match.objectLike({
+            CookiesConfig: {
+              // CDK `CacheCookieBehavior.allowList` renders as CFN "whitelist".
+              CookieBehavior: "whitelist",
+              Cookies: Match.arrayWith(["id-token", "refresh-token"]),
+            },
+          }),
+        }),
+      });
+    });
+
     it("creates a response-headers policy with the namespace prefix in its name", () => {
       template.hasResourceProperties("AWS::CloudFront::ResponseHeadersPolicy", {
         ResponseHeadersPolicyConfig: Match.objectLike({
