@@ -265,19 +265,30 @@ export class CloudFrontDistribution extends Construct {
       },
       additionalBehaviors: {
         // Auth-verify endpoint — no edge check.
+        //
+        // Origin request policy MUST forward the viewer `Host` header: the
+        // auth-verify handler discriminates tenants by the `Host` header
+        // (`extractTenantSubdomain`). `AllViewerExceptHostHeader` would strip
+        // it and CloudFront would substitute the origin's `.on.aws` host,
+        // making the handler reject every request as `400 invalid host`.
+        // Unlike the OAC/SigV4 single-tenant site, these Function URLs are
+        // `AuthType: NONE` (no signing), so there is no reason to remove Host.
+        // `AllViewer` forwards Host + cookies + query strings.
         "/login/callback*": {
           origin: verifyOrigin,
           ...commonBehaviorBase,
           cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
-          originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
+          originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER,
           allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
         },
-        // Logout endpoint — no edge check.
+        // Logout endpoint — no edge check. Same Host-forwarding requirement
+        // as `/login/callback*` (the auth-signout handler is also
+        // Host-discriminated).
         "/logout*": {
           origin: signoutOrigin,
           ...commonBehaviorBase,
           cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
-          originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
+          originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER,
           allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
         },
         // Login page itself — no edge check (otherwise un-authenticated

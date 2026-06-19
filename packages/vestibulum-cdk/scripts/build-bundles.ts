@@ -65,6 +65,10 @@ export const BUNDLE_ENTRIES: ReadonlyArray<{
   // v0.2 shared-distribution bundles
   { name: "admin", entry: "shared-distribution-admin.ts", edge: false },
   { name: "reconciler", entry: "shared-distribution-reconciler.ts", edge: false },
+  // Multi-tenant Function URL handlers (Host-discriminated). Distinct from the
+  // single-tenant `auth-verify`/`auth-signout` bundles above.
+  { name: "shared-auth-verify", entry: "shared-auth-verify.ts", edge: false },
+  { name: "shared-auth-signout", entry: "shared-auth-signout.ts", edge: false },
 ];
 
 /** Lock manifest shape — written to `lambda-bundles.lock.json`. */

@@ -21,7 +21,13 @@ export interface FunctionUrlEvent {
 export interface FunctionUrlResult {
   statusCode: number;
   headers?: Record<string, string>;
-  multiValueHeaders?: Record<string, string[]>;
+  /**
+   * Set-Cookie values. Lambda Function URLs (payload format 2.0) emit cookies
+   * ONLY via this top-level `cookies` array — `multiValueHeaders`/`Set-Cookie`
+   * headers are silently dropped on a Function URL. See AWS docs: "Invoking
+   * Lambda function URLs" § Cookies.
+   */
+  cookies?: string[];
   body?: string;
 }
 
@@ -93,7 +99,7 @@ export function createAuthSignoutHandler(deps: AuthSignoutDeps = {}) {
       headers: {
         location: `${tenantConfig.siteBaseUrl}/`,
       },
-      multiValueHeaders: { 'Set-Cookie': clearCookies },
+      cookies: clearCookies,
     };
   };
 }

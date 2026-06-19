@@ -1,5 +1,17 @@
 # @de-otio/vestibulum
 
+## 0.3.4
+
+### Patch Changes
+
+- Apply the Function-URL cookie fix to the **multi-tenant `shared-distribution`**
+  `auth-verify` and `auth-signout` handlers (0.3.3 fixed only the single-tenant
+  `handlers/` variants). They returned cookies via
+  `multiValueHeaders["Set-Cookie"]`, which Lambda Function URLs (payload format
+  2.0) silently drop — so a successful tenant sign-in set no `id-token` cookie.
+  Both now return the `cookies` array, which Function URLs emit as `set-cookie`
+  headers (per AWS docs, "Invoking Lambda function URLs" § Cookies).
+
 ## 0.3.3
 
 ### Patch Changes

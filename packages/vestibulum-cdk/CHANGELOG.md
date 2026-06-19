@@ -1,5 +1,32 @@
 # @de-otio/vestibulum-cdk
 
+## 0.3.25
+
+### Patch Changes
+
+- Make the **shared (multi-tenant) distribution** actually deploy its
+  multi-tenant auth handlers. Two fixes:
+
+  1. **Bundle wiring.** `SharedDistributionTriggers` loaded the
+     `auth-verify`/`auth-signout` bundles, which are built from the
+     **single-tenant** `@de-otio/vestibulum` barrel export (fixed
+     `COGNITO_CLIENT_ID`, no Host/DDB lookup) — so the multi-tenant
+     `shared-distribution/triggers/*` handlers were never deployed. Added
+     dedicated `shared-auth-verify` / `shared-auth-signout` bundles (which wrap
+     the trigger source) and pointed the construct at them. The two auth
+     Lambdas also get 256 MB (Cognito-cascade headroom), matching the
+     single-tenant `MagicLinkAuthSite`.
+
+  2. **`Host` header forwarding.** The `/login/callback*` and `/logout*`
+     behaviours used the managed `AllViewerExceptHostHeader` origin request
+     policy, which strips the viewer `Host` and substitutes the origin's
+     `.on.aws` host. But these handlers discriminate tenants **by the viewer
+     `Host`**, so every request resolved to `400 invalid host`. Switched to
+     `AllViewer` (forwards Host + cookies + query). Unlike the OAC/SigV4
+     single-tenant site, these Function URLs are `AuthType: NONE`, so there is
+     no signing reason to strip Host. (Requires `@de-otio/vestibulum@^0.3.4`
+     for the Function-URL cookie-array fix in those handlers.)
+
 ## 0.3.24
 
 ### Patch Changes

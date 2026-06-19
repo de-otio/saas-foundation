@@ -99,7 +99,7 @@ describe('shared-distribution auth-signout handler', () => {
     const result = await h(makeEvent(`${subdomain}.${TENANT_PARENT}`));
 
     expect(result.statusCode).toBe(303);
-    const setCookies = result.multiValueHeaders?.['Set-Cookie'] ?? [];
+    const setCookies = result.cookies ?? [];
     expect(setCookies.length).toBeGreaterThanOrEqual(2);
 
     const exactDomain = `${subdomain}.${TENANT_PARENT}`;
@@ -119,7 +119,7 @@ describe('shared-distribution auth-signout handler', () => {
     const h = createAuthSignoutHandler({ tenantParent: TENANT_PARENT });
     const result = await h(makeEvent(`${subdomain}.${TENANT_PARENT}`));
 
-    const setCookies = result.multiValueHeaders?.['Set-Cookie'] ?? [];
+    const setCookies = result.cookies ?? [];
     const idCookie = setCookies.find((c) => c.startsWith('id-token='));
     expect(idCookie).toBeDefined();
     expect(idCookie).toContain('Max-Age=0');
@@ -134,7 +134,7 @@ describe('shared-distribution auth-signout handler', () => {
     const h = createAuthSignoutHandler({ tenantParent: TENANT_PARENT });
     const result = await h(makeEvent(`${subdomain}.${TENANT_PARENT}`));
 
-    const setCookies = result.multiValueHeaders?.['Set-Cookie'] ?? [];
+    const setCookies = result.cookies ?? [];
     const rtCookie = setCookies.find((c) => c.startsWith('refresh-token='));
     expect(rtCookie).toBeDefined();
     expect(rtCookie).toContain('Max-Age=0');

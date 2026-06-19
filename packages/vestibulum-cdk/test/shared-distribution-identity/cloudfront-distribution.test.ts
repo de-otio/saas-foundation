@@ -179,6 +179,36 @@ describe("CloudFrontDistribution — behaviours", () => {
     });
   });
 
+  // The auth Function URLs are Host-discriminated (the handler reads the
+  // viewer `Host` to resolve the tenant). The origin request policy MUST
+  // forward the viewer Host — i.e. AllViewer, NOT AllViewerExceptHostHeader.
+  // AllViewer managed-policy id: 216adef6-5c7f-47e4-b989-5492eafa07d3.
+  const ALL_VIEWER_ID = "216adef6-5c7f-47e4-b989-5492eafa07d3";
+
+  it("/login/callback* forwards the viewer Host (AllViewer origin request policy)", () => {
+    const { template } = synthDefault();
+    const dist = template.findResources("AWS::CloudFront::Distribution");
+    const props = Object.values(dist)[0]?.Properties as {
+      DistributionConfig: { CacheBehaviors: { PathPattern: string; OriginRequestPolicyId?: string }[] };
+    };
+    const cb = props.DistributionConfig.CacheBehaviors.find(
+      (b) => b.PathPattern === "/login/callback*",
+    );
+    expect(cb?.OriginRequestPolicyId).toBe(ALL_VIEWER_ID);
+  });
+
+  it("/logout* forwards the viewer Host (AllViewer origin request policy)", () => {
+    const { template } = synthDefault();
+    const dist = template.findResources("AWS::CloudFront::Distribution");
+    const props = Object.values(dist)[0]?.Properties as {
+      DistributionConfig: { CacheBehaviors: { PathPattern: string; OriginRequestPolicyId?: string }[] };
+    };
+    const cb = props.DistributionConfig.CacheBehaviors.find(
+      (b) => b.PathPattern === "/logout*",
+    );
+    expect(cb?.OriginRequestPolicyId).toBe(ALL_VIEWER_ID);
+  });
+
   it("/login and /login/* behaviours do NOT carry an edge lambda", () => {
     const { template } = synthDefault();
     const dist = template.findResources("AWS::CloudFront::Distribution");

@@ -195,10 +195,17 @@ export class SharedDistributionTriggers extends Construct {
     );
 
     // auth-verify / auth-signout: Function URL Lambdas. Need TENANT_PARENT.
+    //
+    // These use the multi-tenant `shared-auth-*` bundles (Host-discriminated,
+    // per-tenant ClientConfig from DynamoDB) — NOT the single-tenant
+    // `auth-verify`/`auth-signout` bundles (fixed COGNITO_CLIENT_ID). 256 MB
+    // gives headroom for the Cognito call cascade (matches the single-tenant
+    // MagicLinkAuthSite auth Lambdas).
     this.authVerify = new lambda.Function(this, "AuthVerifyFn", {
       ...commonLambdaProps,
-      code: lambda.Code.fromAsset(resolveSharedBundlePath("auth-verify")),
+      code: lambda.Code.fromAsset(resolveSharedBundlePath("shared-auth-verify")),
       handler: "index.handler",
+      memorySize: 256,
       environment: {
         ...commonEnv,
         [RuntimeEnv.TENANT_PARENT]: props.tenantSubdomainParent,
@@ -207,8 +214,9 @@ export class SharedDistributionTriggers extends Construct {
 
     this.authSignout = new lambda.Function(this, "AuthSignoutFn", {
       ...commonLambdaProps,
-      code: lambda.Code.fromAsset(resolveSharedBundlePath("auth-signout")),
+      code: lambda.Code.fromAsset(resolveSharedBundlePath("shared-auth-signout")),
       handler: "index.handler",
+      memorySize: 256,
       environment: {
         ...commonEnv,
         [RuntimeEnv.TENANT_PARENT]: props.tenantSubdomainParent,

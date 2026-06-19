@@ -1,5 +1,5 @@
 {
-  "vestibulumVersion": "0.3.3",
+  "vestibulumVersion": "0.3.4",
   "bundles": {
     "admin": {
       "sha256": "sha256:fa868d34867915e47f3a794ea88a0ff2b846b0cba4ce9831d76538d8314f6db4",
@@ -55,6 +55,16 @@
       "sha256": "sha256:87c60a3e7aab8d38fda76873119a3e51ef9b5ce3f4189a42df7648589c7224d3",
       "sizeBytes": 2081,
       "filename": "reconciler/index.mjs"
+    },
+    "shared-auth-signout": {
+      "sha256": "sha256:3c3597ab63047704ac92a69db0907b0eb2f09b9cc9c5677bd5813370bb8b013c",
+      "sizeBytes": 334015,
+      "filename": "shared-auth-signout/index.mjs"
+    },
+    "shared-auth-verify": {
+      "sha256": "sha256:5ee4861ef0cf70b68f7a2768e1579c5411be4b00357a94ef4f1da4e619441adf",
+      "sizeBytes": 335927,
+      "filename": "shared-auth-verify/index.mjs"
     },
     "verify-auth": {
       "sha256": "sha256:f5354ec3dc5518076230a9912b4cf95572fe969a9a9d8588a0282e4de5745d99",

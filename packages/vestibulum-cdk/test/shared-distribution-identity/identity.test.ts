@@ -242,6 +242,19 @@ describe("SharedDistributionIdentity — minimal default props", () => {
     });
   });
 
+  it("auth Function URL Lambdas get 256 MB (Cognito-cascade headroom)", () => {
+    // The two TENANT_PARENT-carrying Lambdas are the multi-tenant auth
+    // handlers; they are bumped to 256 MB (matching the single-tenant site).
+    template.hasResourceProperties("AWS::Lambda::Function", {
+      MemorySize: 256,
+      Environment: Match.objectLike({
+        Variables: Match.objectLike({
+          VESTIBULUM_TENANT_PARENT: "tenants.example.com",
+        }),
+      }),
+    });
+  });
+
   it("wires the PreSignUp trigger to the user pool", () => {
     template.hasResourceProperties("AWS::Cognito::UserPool", {
       LambdaConfig: Match.objectLike({

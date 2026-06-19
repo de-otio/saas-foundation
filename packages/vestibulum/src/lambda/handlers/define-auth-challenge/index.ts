@@ -49,6 +49,11 @@ export interface DefineAuthChallengeEvent {
  * makes the runtime await and return the populated event.
  */
 export function createDefineAuthChallengeHandler() {
+  // `async` is intentional despite the absence of `await` — see the JSDoc
+  // above: a non-async Lambda handler's return value is ignored by the
+  // runtime, so Cognito would receive `null` and fail with
+  // `InvalidLambdaResponseException`.
+  // eslint-disable-next-line @typescript-eslint/require-await
   return async function handler(
     event: DefineAuthChallengeEvent,
   ): Promise<DefineAuthChallengeEvent> {

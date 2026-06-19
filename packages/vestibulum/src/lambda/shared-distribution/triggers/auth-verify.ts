@@ -54,7 +54,14 @@ export interface FunctionUrlEvent {
 export interface FunctionUrlResult {
   statusCode: number;
   headers?: Record<string, string>;
-  multiValueHeaders?: Record<string, string[]>;
+  /**
+   * Set-Cookie values. Lambda Function URLs (payload format 2.0) emit cookies
+   * ONLY via this top-level `cookies` array — `multiValueHeaders`/`Set-Cookie`
+   * headers are silently dropped on a Function URL. See AWS docs: "Invoking
+   * Lambda function URLs" § Cookies ("don't manually add set-cookie headers;
+   * include the cookies in your response payload object").
+   */
+  cookies?: string[];
   body?: string;
 }
 
@@ -195,7 +202,7 @@ export function createAuthVerifyHandler(deps: AuthVerifyDeps = {}) {
       return {
         statusCode: 200,
         headers: { 'Content-Type': 'application/json' },
-        multiValueHeaders: { 'Set-Cookie': setCookies },
+        cookies: setCookies,
         body: JSON.stringify({ ok: true }),
       };
     }
@@ -272,7 +279,7 @@ export function createAuthVerifyHandler(deps: AuthVerifyDeps = {}) {
     return {
       statusCode: 200,
       headers: { 'Content-Type': 'application/json' },
-      multiValueHeaders: { 'Set-Cookie': setCookies },
+      cookies: setCookies,
       body: JSON.stringify({ ok: true }),
     };
   };

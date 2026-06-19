@@ -179,7 +179,7 @@ describe('shared-distribution auth-verify handler', () => {
     const result = await h(makeRefreshEvent(subdomain, 'old-rt'));
 
     expect(result.statusCode).toBe(200);
-    const setCookies = result.multiValueHeaders?.['Set-Cookie'] ?? [];
+    const setCookies = result.cookies ?? [];
     expect(setCookies.length).toBeGreaterThanOrEqual(1);
     const idCookie = setCookies.find((c) => c.startsWith('id-token='));
     expect(idCookie).toBeDefined();
@@ -206,7 +206,7 @@ describe('shared-distribution auth-verify handler', () => {
     const h = createAuthVerifyHandler({ tenantParent: TENANT_PARENT });
     const result = await h(makeRefreshEvent(subdomain, 'old-rt'));
 
-    const setCookies = result.multiValueHeaders?.['Set-Cookie'] ?? [];
+    const setCookies = result.cookies ?? [];
     const idCookie = setCookies.find((c) => c.startsWith('id-token=')) ?? '';
     // Should contain "Domain=<subdomain>.tenants.example.com" (no leading dot)
     expect(idCookie).toContain(`Domain=${subdomain}.${TENANT_PARENT}`);

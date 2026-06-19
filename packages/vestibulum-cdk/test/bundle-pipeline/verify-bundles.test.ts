@@ -147,7 +147,7 @@ describe("readLockManifest", () => {
 });
 
 describe("committed lock manifest", () => {
-  it("can be read and has the expected 12 bundle entries", async () => {
+  it("can be read and has the expected 14 bundle entries", async () => {
     const repoRoot = path.resolve(import.meta.dirname ?? __dirname, "..", "..");
     const lockPath = path.join(repoRoot, "lambda-bundles.lock.json");
     const manifest = await readLockManifest(lockPath);
@@ -163,6 +163,8 @@ describe("committed lock manifest", () => {
       "pre-signup",
       "pre-token-generation",
       "reconciler",
+      "shared-auth-signout",
+      "shared-auth-verify",
       "verify-auth",
     ]);
   });
