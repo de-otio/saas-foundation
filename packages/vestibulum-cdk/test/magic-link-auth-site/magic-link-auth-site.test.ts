@@ -152,11 +152,23 @@ describe("MagicLinkAuthSite", () => {
       });
     });
 
+    it("auth-verify Lambda has a timeout/memory above the 3s/128MB defaults (Cognito cascade headroom)", () => {
+      // The success path cascades through Cognito triggers; the CDK 3s/128MB
+      // defaults overrun (502) and run near OOM. Lock in the bumped values.
+      template.hasResourceProperties("AWS::Lambda::Function", {
+        Description: Match.stringLikeRegexp("Vestibulum auth-verify"),
+        Timeout: 10,
+        MemorySize: 256,
+      });
+    });
+
     it("auth-signout Lambda has reservedConcurrentExecutions 5", () => {
       template.hasResourceProperties("AWS::Lambda::Function", {
         Description: Match.stringLikeRegexp("Vestibulum auth-signout"),
         ReservedConcurrentExecutions: 5,
         Runtime: "nodejs22.x",
+        Timeout: 10,
+        MemorySize: 256,
       });
     });
 

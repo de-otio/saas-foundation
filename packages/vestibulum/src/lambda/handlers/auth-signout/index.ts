@@ -36,7 +36,12 @@ export interface LambdaFunctionUrlEvent {
 export interface LambdaFunctionUrlResult {
   statusCode: number;
   headers?: Record<string, string>;
-  multiValueHeaders?: Record<string, string[]>;
+  /**
+   * Set-Cookie values. Lambda Function URLs (payload format 2.0) emit cookies
+   * ONLY via this `cookies` array, not via `Set-Cookie`/`multiValueHeaders`.
+   * See AWS docs: "Invoking Lambda function URLs" § Cookies.
+   */
+  cookies?: string[];
   body?: string;
 }
 
@@ -191,7 +196,7 @@ export function createAuthSignoutHandler(deps: AuthSignoutHandlerDeps = {}) {
 
     return {
       statusCode: 200,
-      multiValueHeaders: { "Set-Cookie": clearHeaders },
+      cookies: clearHeaders,
     };
   };
 }

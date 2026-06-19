@@ -1,5 +1,17 @@
 # @de-otio/vestibulum
 
+## 0.3.3
+
+### Patch Changes
+
+- Fix the `auth-verify` and `auth-signout` handlers' Set-Cookie response for
+  Lambda Function URLs. They returned cookies via `multiValueHeaders["Set-Cookie"]`
+  (API Gateway / ALB shape), which Lambda Function URLs (payload format 2.0)
+  silently drop — so a successful sign-in set no `id-token` cookie. Both handlers
+  now return the `cookies` array, which Function URLs emit as `set-cookie`
+  headers (per AWS docs, "Invoking Lambda function URLs" § Cookies). The
+  multi-tenant `shared-distribution` variants are unaffected by this change.
+
 ## 0.3.2
 
 ### Patch Changes

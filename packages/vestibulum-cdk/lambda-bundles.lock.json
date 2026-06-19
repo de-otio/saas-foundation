@@ -1,5 +1,5 @@
 {
-  "vestibulumVersion": "0.3.2",
+  "vestibulumVersion": "0.3.3",
   "bundles": {
     "admin": {
       "sha256": "sha256:fa868d34867915e47f3a794ea88a0ff2b846b0cba4ce9831d76538d8314f6db4",
@@ -7,13 +7,13 @@
       "filename": "admin/index.mjs"
     },
     "auth-signout": {
-      "sha256": "sha256:fbb7e35de2bc7be37b5e21eb4beb64dd4827f05e3385f142df73d9b4a2e8ac74",
-      "sizeBytes": 1233816,
+      "sha256": "sha256:17159a69427b17a6d3d493d35704b8983b31dc5deb50c3482b89f998992f9dfa",
+      "sizeBytes": 1233791,
       "filename": "auth-signout/index.mjs"
     },
     "auth-verify": {
-      "sha256": "sha256:a494bbfb24605cf45aec6f72f94aa0bb14e2e28271adda207f121bea6bb80907",
-      "sizeBytes": 1234164,
+      "sha256": "sha256:dd0528670925f14f7ca83c54040d4213a15cca974f11a1dd2e816116023209ab",
+      "sizeBytes": 1234139,
       "filename": "auth-verify/index.mjs"
     },
     "bounce-handler": {

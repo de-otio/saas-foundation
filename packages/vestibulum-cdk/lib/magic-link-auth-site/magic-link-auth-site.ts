@@ -302,6 +302,13 @@ export class MagicLinkAuthSite extends Construct {
       code: lambda.Code.fromAsset(bundlePaths["auth-verify"]),
       handler: "index.handler",
       runtime: lambda.Runtime.NODEJS_22_X,
+      // The success path calls Cognito RespondToAuthChallenge, which cascades
+      // synchronously through the VerifyAuthChallengeResponse + PreTokenGeneration
+      // triggers; with the 3s Lambda default plus a cold start this overruns and
+      // the Function URL returns 502. 256 MB also keeps headroom over the
+      // ~115 MB the aws-sdk Cognito client uses at 128 MB.
+      timeout: Duration.seconds(10),
+      memorySize: 256,
       reservedConcurrentExecutions: authVerifyConcurrency,
       logRetention: logs.RetentionDays.ONE_MONTH,
       description: `${this.namespacePrefix} auth-verify endpoint for ${domain}.`,
@@ -329,6 +336,10 @@ export class MagicLinkAuthSite extends Construct {
       code: lambda.Code.fromAsset(bundlePaths["auth-signout"]),
       handler: "index.handler",
       runtime: lambda.Runtime.NODEJS_22_X,
+      // Calls Cognito GlobalSignOut over the network; give the same headroom as
+      // auth-verify so a cold start + Cognito latency doesn't hit the 3s default.
+      timeout: Duration.seconds(10),
+      memorySize: 256,
       reservedConcurrentExecutions: authSignoutConcurrency,
       logRetention: logs.RetentionDays.ONE_MONTH,
       description: `${this.namespacePrefix} auth-signout endpoint for ${domain}.`,

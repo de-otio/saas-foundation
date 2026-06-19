@@ -1,5 +1,24 @@
 # @de-otio/vestibulum-cdk
 
+## 0.3.22
+
+### Patch Changes
+
+- Finish making browser sign-in completion work — two further fixes that the
+  0.3.21 OAC change exposed once `/auth-verify` could actually be invoked:
+
+  - **Bump the auth Lambda timeout/memory off the CDK defaults.** The
+    `auth-verify` success path calls Cognito `RespondToAuthChallenge`, which
+    cascades synchronously through the VerifyAuthChallengeResponse +
+    PreTokenGeneration triggers; with the 3s default (and a cold start) it
+    overran and the Function URL returned `502`. Both auth Lambdas now use a
+    10s timeout and 256 MB (the handler used ~115 MB of the 128 MB default —
+    near OOM). Adds synth assertions.
+  - **Rebundles the `auth-verify`/`auth-signout` handlers** carrying the
+    `@de-otio/vestibulum` 0.3.3 fix that returns Set-Cookie via the Function
+    URL `cookies` array instead of `multiValueHeaders` (which Function URLs
+    drop), so a successful sign-in actually sets the `id-token` cookie.
+
 ## 0.3.21
 
 ### Patch Changes
