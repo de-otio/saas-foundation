@@ -1,5 +1,19 @@
 # @de-otio/vestibulum-cdk
 
+## 0.3.24
+
+### Patch Changes
+
+- Forward the auth cookies via an **origin request policy** instead of a cache
+  policy. 0.3.23 tried to forward cookies on a caching-disabled cache policy,
+  which CloudFront rejects at deploy ("CookieBehavior is invalid for policy with
+  caching disabled"). The `/auth-verify*` and `/auth-signout` behaviours keep
+  the `CachingDisabled` cache policy and now attach the managed
+  `AllViewerExceptHostHeader` origin request policy, which forwards all viewer
+  cookies/headers/query EXCEPT Host (Host is excluded so OAC keeps signing
+  against the Lambda URL host). This restores `Set-Cookie` to the viewer on
+  sign-in and request cookies to the origin on sign-out, without caching.
+
 ## 0.3.23
 
 ### Patch Changes

@@ -572,27 +572,20 @@ export class MagicLinkAuthSite extends Construct {
       cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
     };
 
-    // Cache policy for the auth Function URL endpoints. The managed
-    // `CachingDisabled` policy has cookie behaviour `none`, which makes
-    // CloudFront BOTH strip `Set-Cookie` from origin responses before they
-    // reach the viewer AND strip request cookies before the origin — so
-    // sign-in never sets the id-token cookie and sign-out never sees the
-    // tokens it must revoke. Forwarding the auth cookies (no caching) fixes
-    // both. See AWS docs: "Cache content based on cookies".
-    const authEndpointCachePolicy = new cloudfront.CachePolicy(
-      this,
-      "AuthEndpointCachePolicy",
-      {
-        cachePolicyName: `${this.namespacePrefix}AuthSiteAuth-${region}-${domain.replace(/\./g, "-")}`,
-        comment: `No-cache + auth-cookie passthrough for the auth Function URLs on ${domain}.`,
-        minTtl: Duration.seconds(0),
-        defaultTtl: Duration.seconds(0),
-        maxTtl: Duration.seconds(0),
-        cookieBehavior: cloudfront.CacheCookieBehavior.allowList("id-token", "refresh-token"),
-        headerBehavior: cloudfront.CacheHeaderBehavior.none(),
-        queryStringBehavior: cloudfront.CacheQueryStringBehavior.none(),
-      },
-    );
+    // The auth Function URL endpoints must NOT cache (CachingDisabled, from
+    // `commonBehavior`) but DO need cookies forwarded: CloudFront strips
+    // `Set-Cookie` from origin responses AND request cookies before the origin
+    // unless cookies are forwarded, so sign-in never sets the id-token cookie
+    // and sign-out never sees the tokens it must revoke. A caching-disabled
+    // cache policy cannot carry a cookie behaviour ("CookieBehavior is invalid
+    // for policy with caching disabled"), so forwarding is done with an origin
+    // request policy. The managed `AllViewerExceptHostHeader` policy forwards
+    // all viewer headers/cookies/query EXCEPT Host — the right choice for a
+    // Lambda Function URL origin (OAC signs against the Lambda URL host, so the
+    // viewer Host must not be forwarded). See AWS: "Cache content based on
+    // cookies" + managed origin request policies.
+    const authOriginRequestPolicy =
+      cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER;
 
     // -------------------------------------------------------------------
     // Login-page URI rewrite (CloudFront Function, viewer-request).
@@ -675,16 +668,17 @@ export class MagicLinkAuthSite extends Construct {
         "/auth-verify*": {
           origin: origins.FunctionUrlOrigin.withOriginAccessControl(this.authVerifyUrl),
           ...commonBehavior,
-          // Forward the auth cookies (and stop Set-Cookie being stripped).
-          cachePolicy: authEndpointCachePolicy,
+          // Forward cookies (so the Set-Cookie sign-in response reaches the
+          // viewer) without caching; Host excluded to keep OAC signing valid.
+          originRequestPolicy: authOriginRequestPolicy,
           allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
         },
         "/auth-signout": {
           origin: origins.FunctionUrlOrigin.withOriginAccessControl(this.authSignoutUrl),
           ...commonBehavior,
           // auth-signout READS the id-token/refresh-token request cookies and
-          // clears them via Set-Cookie; both need this cookie-forwarding policy.
-          cachePolicy: authEndpointCachePolicy,
+          // clears them via Set-Cookie; both need cookie forwarding.
+          originRequestPolicy: authOriginRequestPolicy,
           allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
         },
       },

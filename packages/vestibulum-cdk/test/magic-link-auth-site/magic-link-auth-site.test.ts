@@ -204,23 +204,26 @@ describe("MagicLinkAuthSite", () => {
       });
     });
 
-    it("uses a no-cache cookie-forwarding cache policy on the auth endpoints (so Set-Cookie reaches the viewer)", () => {
-      // CachingDisabled (cookie behaviour none) makes CloudFront strip both
-      // request cookies and Set-Cookie responses, breaking sign-in/sign-out.
-      template.hasResourceProperties("AWS::CloudFront::CachePolicy", {
-        CachePolicyConfig: Match.objectLike({
-          MinTTL: 0,
-          MaxTTL: 0,
-          DefaultTTL: 0,
-          ParametersInCacheKeyAndForwardedToOrigin: Match.objectLike({
-            CookiesConfig: {
-              // CDK `CacheCookieBehavior.allowList` renders as CFN "whitelist".
-              CookieBehavior: "whitelist",
-              Cookies: Match.arrayWith(["id-token", "refresh-token"]),
-            },
-          }),
-        }),
-      });
+    it("attaches an origin request policy to the auth endpoints so cookies are forwarded (Set-Cookie reaches the viewer)", () => {
+      // CachingDisabled strips request cookies AND Set-Cookie responses, and a
+      // caching-disabled cache policy can't carry a cookie behaviour — so
+      // cookie forwarding must come from an origin request policy. We use the
+      // managed AllViewerExceptHostHeader (Host excluded for OAC). Assert both
+      // auth behaviours reference an origin request policy.
+      const dists = template.findResources("AWS::CloudFront::Distribution");
+      const dist = Object.values(dists)[0] as {
+        Properties: {
+          DistributionConfig: {
+            CacheBehaviors: Array<{ PathPattern: string; OriginRequestPolicyId?: unknown }>;
+          };
+        };
+      };
+      const behaviors = dist.Properties.DistributionConfig.CacheBehaviors;
+      for (const pattern of ["/auth-verify*", "/auth-signout"]) {
+        const b = behaviors.find((x) => x.PathPattern === pattern);
+        expect(b, `behaviour ${pattern}`).toBeDefined();
+        expect(b!.OriginRequestPolicyId, `${pattern} OriginRequestPolicyId`).toBeTruthy();
+      }
     });
 
     it("creates a response-headers policy with the namespace prefix in its name", () => {
