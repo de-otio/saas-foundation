@@ -1,5 +1,32 @@
 # @de-otio/vestibulum-cdk
 
+## 0.3.21
+
+### Patch Changes
+
+- Make browser magic-link **sign-in completion** work. `/auth-verify` (and
+  `/auth-signout`) are Lambda Function URLs behind CloudFront OAC, and a browser
+  POST to them failed at the edge — so the login page loaded but sign-in could
+  never finish. Two fixes, both per AWS's OAC-for-Lambda-Function-URL docs:
+
+  - **Grant `lambda:InvokeFunction` in addition to `lambda:InvokeFunctionUrl`.**
+    CDK's `FunctionUrlOrigin.withOriginAccessControl` only adds
+    `InvokeFunctionUrl`; AWS requires **both** for OAC, so a correctly-signed
+    POST was rejected at the Function URL auth layer with `403 Forbidden` and the
+    handler never ran. The construct now adds an `InvokeFunction` permission for
+    the CloudFront service principal (scoped to the distribution via
+    `AWS:SourceArn`) on both auth Function URLs.
+  - **Client sends `x-amz-content-sha256`.** OAC-signed `POST`/`PUT` to a Lambda
+    Function URL requires the client to send the SHA-256 of the body in the
+    `x-amz-content-sha256` header (Lambda doesn't accept unsigned payloads);
+    CloudFront then SigV4-signs the origin request. `login-callback.js` now
+    computes the body hash with `crypto.subtle` and sends it. (Any other client
+    that POSTs to `/auth-signout` must do the same.)
+
+  Adds synth assertions for both grants and a live HTTP e2e
+  (`atrium/e2e/auth-verify-http.e2e.ts`) covering the missing-hash, wrong-Origin,
+  success, and single-use-replay cases.
+
 ## 0.3.20
 
 ### Patch Changes

@@ -168,6 +168,30 @@ describe("MagicLinkAuthSite", () => {
       expect(authTypes.filter((t) => t === "AWS_IAM").length).toBeGreaterThanOrEqual(2);
     });
 
+    it("grants CloudFront both InvokeFunctionUrl and InvokeFunction on the auth Function URLs (OAC POST requirement)", () => {
+      // AWS docs (Restrict access to a Lambda function URL origin) require the
+      // CloudFront service principal to hold BOTH actions for OAC-signed POSTs;
+      // `withOriginAccessControl` only adds InvokeFunctionUrl, so the construct
+      // must add InvokeFunction explicitly or browser sign-in 403s at the
+      // Function URL auth layer.
+      const perms = template.findResources("AWS::Lambda::Permission");
+      const cfPerms = Object.values(perms)
+        .map((r) => r.Properties as { Action: string; Principal: string })
+        .filter((p) => p.Principal === "cloudfront.amazonaws.com");
+      const actions = cfPerms.map((p) => p.Action);
+      // One InvokeFunctionUrl + one InvokeFunction per auth Function URL (×2).
+      expect(actions.filter((a) => a === "lambda:InvokeFunctionUrl").length).toBeGreaterThanOrEqual(2);
+      expect(actions.filter((a) => a === "lambda:InvokeFunction").length).toBe(2);
+    });
+
+    it("scopes the InvokeFunction grants to this distribution via SourceArn", () => {
+      template.hasResourceProperties("AWS::Lambda::Permission", {
+        Action: "lambda:InvokeFunction",
+        Principal: "cloudfront.amazonaws.com",
+        SourceArn: Match.objectLike({ "Fn::Join": Match.anyValue() }),
+      });
+    });
+
     it("creates a response-headers policy with the namespace prefix in its name", () => {
       template.hasResourceProperties("AWS::CloudFront::ResponseHeadersPolicy", {
         ResponseHeadersPolicyConfig: Match.objectLike({

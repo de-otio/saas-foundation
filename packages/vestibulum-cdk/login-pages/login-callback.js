@@ -56,15 +56,28 @@ async function complete() {
   }
 
   try {
+    const body = JSON.stringify({
+      session: stored.session,
+      challengeAnswer: token,
+      email: stored.email,
+    });
+    // `/auth-verify` is a Lambda Function URL behind CloudFront OAC. AWS
+    // requires POST clients to send the SHA-256 of the body in the
+    // `x-amz-content-sha256` header (Lambda Function URLs reject unsigned
+    // payloads); CloudFront then SigV4-signs the origin request itself. Without
+    // this header the signed request fails with a 403 signature mismatch.
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body));
+    const payloadHash = Array.from(new Uint8Array(digest))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
     const res = await fetch("/auth-verify", {
       method: "POST",
       credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        session: stored.session,
-        challengeAnswer: token,
-        email: stored.email,
-      }),
+      headers: {
+        "Content-Type": "application/json",
+        "x-amz-content-sha256": payloadHash,
+      },
+      body,
     });
     if (!res.ok) {
       fail("This sign-in link is invalid or has expired.");

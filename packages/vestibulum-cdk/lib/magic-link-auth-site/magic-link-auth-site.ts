@@ -651,5 +651,32 @@ export class MagicLinkAuthSite extends Construct {
         },
       },
     });
+
+    // OAC POST support. CloudFront OAC for a Lambda Function URL requires the
+    // CloudFront service principal to hold BOTH `lambda:InvokeFunctionUrl`
+    // (added by `FunctionUrlOrigin.withOriginAccessControl`) AND
+    // `lambda:InvokeFunction`. Without the latter, a correctly-signed POST is
+    // rejected at the Function URL auth layer with `403 Forbidden` and the
+    // handler never runs — so the browser sign-in POST to `/auth-verify` (and a
+    // POST sign-out to `/auth-signout`) cannot complete. Both grants are scoped
+    // to this distribution via `AWS:SourceArn`.
+    // See: AWS docs — "Restrict access to an AWS Lambda function URL origin"
+    // (grants both `lambda:InvokeFunctionUrl` and `lambda:InvokeFunction`).
+    const distributionArn = Stack.of(this).formatArn({
+      service: "cloudfront",
+      region: "",
+      resource: "distribution",
+      resourceName: this.distribution.distributionId,
+    });
+    authVerifyFn.addPermission("AuthVerifyOacInvokeFunction", {
+      principal: new iam.ServicePrincipal("cloudfront.amazonaws.com"),
+      action: "lambda:InvokeFunction",
+      sourceArn: distributionArn,
+    });
+    authSignoutFn.addPermission("AuthSignoutOacInvokeFunction", {
+      principal: new iam.ServicePrincipal("cloudfront.amazonaws.com"),
+      action: "lambda:InvokeFunction",
+      sourceArn: distributionArn,
+    });
   }
 }
