@@ -1,5 +1,16 @@
 # @de-otio/vestibulum-cdk
 
+## 0.3.27
+
+### Patch Changes
+
+- Tighten the login-page CSP: serve `/login*` with the same strict
+  `connect-src 'self'` policy as the app and drop the relaxed login-scoped
+  response-headers policy. The login page now POSTs sign-in to the same-origin
+  `/auth-login` endpoint (and `login-callback.js` to `/auth-verify`), so the
+  browser no longer calls `cognito-idp` directly and the dead Cognito
+  `connect-src` is no longer needed. CDK-only change (no Lambda bundle impact).
+
 ## 0.3.26
 
 ### Patch Changes
@@ -153,7 +164,7 @@
     referenced `login.js` / `callback.js` that did not exist. Added `login.js`
     (browser-side Cognito `InitiateAuth` CUSTOM_AUTH → stash `{email, session}`)
     and `login-callback.js` (read the fragment token, POST `{session,
-    challengeAnswer, email}` to `/auth-verify`, redirect on success). The public
+challengeAnswer, email}` to `/auth-verify`, redirect on success). The public
     website-client id + region are injected at deploy via a `login-config.json`
     BucketDeployment source.
   - **Login-scoped CSP.** A separate response-headers policy applied only to
