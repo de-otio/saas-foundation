@@ -537,12 +537,11 @@ export class MagicLinkAuthSite extends Construct {
     // -------------------------------------------------------------------
     // Response-headers policy. Branding suppressible via S-C12.
     // -------------------------------------------------------------------
-    // The default (app) CSP is strict `connect-src 'self'`. The login page,
-    // however, calls Cognito `InitiateAuth` directly from the browser, so it
-    // needs `connect-src` to the regional Cognito IDP endpoint. That
-    // relaxation is scoped to a SEPARATE response-headers policy applied only
-    // to the `/login*` behaviour below — the app keeps `connect-src 'self'`.
-    const cognitoEndpoint = `https://cognito-idp.${region}.amazonaws.com`;
+    // Strict `connect-src 'self'` everywhere. The login page previously relaxed
+    // this to the regional Cognito IDP endpoint (the browser called
+    // `InitiateAuth` directly), but sign-in initiation now goes through the
+    // same-origin `/auth-login` endpoint and the callback POSTs same-origin to
+    // `/auth-verify` — so no Cognito connect-src relaxation is needed.
     const cspWith = (connectSrc: string): string =>
       [
         "default-src 'self'",
@@ -610,14 +609,6 @@ export class MagicLinkAuthSite extends Construct {
 
     const responseHeadersPolicy =
       props.responseHeadersPolicy ?? makeResponseHeadersPolicy("", "", cspWith("'self'"));
-
-    // Login-scoped policy: identical to the default but with the Cognito IDP
-    // endpoint added to `connect-src`. When the consumer supplies their own
-    // policy we reuse it for `/login*` too (their CSP must then permit the
-    // Cognito endpoint); otherwise we mint the relaxed login variant.
-    const loginResponseHeadersPolicy =
-      props.responseHeadersPolicy ??
-      makeResponseHeadersPolicy("Login", "Login", cspWith(`'self' ${cognitoEndpoint}`));
 
     const commonBehavior: Partial<cloudfront.AddBehaviorOptions> = {
       viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
@@ -707,9 +698,9 @@ export class MagicLinkAuthSite extends Construct {
         "/login*": {
           origin: origins.S3BucketOrigin.withOriginAccessControl(this.loginPageBucket),
           ...commonBehavior,
-          // Override the strict default policy with the login-scoped one that
-          // permits the browser's Cognito `InitiateAuth` connect-src.
-          responseHeadersPolicy: loginResponseHeadersPolicy,
+          // Same strict security headers as the app — login initiation is
+          // same-origin (`/auth-login`), so no CSP relaxation is needed.
+          responseHeadersPolicy,
           allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
           functionAssociations: [
             {

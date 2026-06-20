@@ -954,19 +954,19 @@ describe("MagicLinkAuthSite", () => {
       }
     });
 
-    it("mints a login-scoped response-headers policy allowing the Cognito IDP connect-src", () => {
-      template.hasResourceProperties("AWS::CloudFront::ResponseHeadersPolicy", {
-        ResponseHeadersPolicyConfig: Match.objectLike({
-          Name: Match.stringLikeRegexp("^VestibulumAuthSiteLogin-"),
-          SecurityHeadersConfig: Match.objectLike({
-            ContentSecurityPolicy: Match.objectLike({
-              ContentSecurityPolicy: Match.stringLikeRegexp(
-                "connect-src 'self' https://cognito-idp\\.[^ ]+\\.amazonaws\\.com",
-              ),
-            }),
-          }),
-        }),
-      });
+    it("serves /login* with the strict app CSP — no Cognito connect-src relaxation", () => {
+      // Sign-in initiation is now same-origin (`/auth-login`) and the callback
+      // POSTs same-origin to `/auth-verify`, so the previously relaxed
+      // login-scoped policy is gone: no response-headers policy is named
+      // "...Login-" and no CSP permits the Cognito IDP endpoint.
+      const policies = template.findResources("AWS::CloudFront::ResponseHeadersPolicy");
+      for (const p of Object.values(policies)) {
+        const cfg = (p.Properties as { ResponseHeadersPolicyConfig?: Record<string, unknown> })
+          .ResponseHeadersPolicyConfig;
+        expect(String((cfg as { Name?: string })?.Name ?? "")).not.toMatch(/AuthSiteLogin-/);
+        const csp = JSON.stringify(cfg ?? {});
+        expect(csp).not.toContain("cognito-idp");
+      }
     });
 
     it("keeps the default (app) CSP strict with connect-src 'self'", () => {
