@@ -2,20 +2,21 @@
  * login.js — magic-link sign-in initiation (browser).
  *
  * Flow:
- *   1. Load `/login-config.json` (deploy-injected: region + public website
- *      client id).
- *   2. On submit, call Cognito `InitiateAuth` (AuthFlow CUSTOM_AUTH) directly
- *      against the regional Cognito IDP endpoint. The website client is a
- *      public SPA client (no secret), so this is safe from the browser.
- *   3. Cognito returns a `Session`. Stash `{ email, session }` in
- *      sessionStorage so the callback page (opened by the magic link in the
- *      SAME browser) can complete the challenge.
- *   4. Show a generic "check your email" message.
+ *   1. On submit, POST `{ email }` (JSON) to the same-origin `/auth-login`
+ *      endpoint (a Lambda Function URL behind CloudFront OAC). The request
+ *      carries `x-amz-content-sha256: <hex sha256 of body>` so that
+ *      CloudFront can SigV4-sign the origin request; the browser automatically
+ *      adds the `Origin` header for same-origin requests.
+ *   2. On success, the response JSON `{ session }` is stashed as
+ *      `{ email, session }` in sessionStorage so the callback page (opened by
+ *      the magic link in the SAME browser) can complete the challenge.
+ *   3. Show a generic "check your email" message.
  *
- * Enumeration parity: the backend issues a challenge (and a `Session`) even
- * for unknown or denylisted emails, only sending mail to real recipients. So
- * a successful `InitiateAuth` always shows the same success copy regardless of
- * whether the address exists.
+ * Enumeration parity: the backend issues a session even for unknown or
+ * denylisted emails, only sending mail to real recipients. So a successful
+ * `/auth-login` call always shows the same success copy regardless of whether
+ * the address exists. On failure the same generic error is shown — never
+ * distinguish failure modes.
  */
 
 // Shared sessionStorage key — read back by login-callback.js.
@@ -39,39 +40,18 @@ function showSuccess(message) {
   successEl.textContent = message;
 }
 
-let configPromise;
-/** Fetch and cache `/login-config.json`. */
-function loadConfig() {
-  configPromise ??= fetch("/login-config.json", { credentials: "omit" }).then((res) => {
-    if (!res.ok) throw new Error(`config ${res.status}`);
-    return res.json();
-  });
-  return configPromise;
-}
-
 /**
- * Calls Cognito `InitiateAuth` (CUSTOM_AUTH) and returns the challenge Session.
- * Raw JSON-1.1 protocol call — avoids bundling the AWS SDK into a static asset.
+ * Returns the lowercase hex SHA-256 digest of a UTF-8 string.
+ * Required by `/auth-login` (Lambda Function URL behind CloudFront OAC):
+ * AWS needs `x-amz-content-sha256` so CloudFront can SigV4-sign the
+ * forwarded origin request; without it the signature mismatches and the
+ * request is rejected with a 403.
  */
-async function initiateAuth(region, clientId, email) {
-  const res = await fetch(`https://cognito-idp.${region}.amazonaws.com/`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-amz-json-1.1",
-      "X-Amz-Target": "AWSCognitoIdentityProviderService.InitiateAuth",
-    },
-    body: JSON.stringify({
-      AuthFlow: "CUSTOM_AUTH",
-      ClientId: clientId,
-      AuthParameters: { USERNAME: email },
-    }),
-  });
-  if (!res.ok) throw new Error(`InitiateAuth ${res.status}`);
-  const data = await res.json();
-  if (typeof data.Session !== "string" || data.Session === "") {
-    throw new Error("InitiateAuth: missing Session");
-  }
-  return data.Session;
+async function sha256hex(str) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 form.addEventListener("submit", async (event) => {
@@ -87,9 +67,22 @@ form.addEventListener("submit", async (event) => {
   errorEl.textContent = "";
 
   try {
-    const { region, userPoolClientId } = await loadConfig();
-    const session = await initiateAuth(region, userPoolClientId, email);
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ email, session }));
+    const body = JSON.stringify({ email });
+    const hash = await sha256hex(body);
+    const res = await fetch("/auth-login", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-amz-content-sha256": hash,
+      },
+      body,
+    });
+    if (!res.ok) throw new Error(`auth-login ${res.status}`);
+    const data = await res.json();
+    if (typeof data.session !== "string" || data.session === "") {
+      throw new Error("auth-login: missing session");
+    }
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ email, session: data.session }));
     showSuccess("Check your email for a sign-in link. Open it in this browser.");
   } catch {
     // Generic message — never distinguish failure modes (enumeration parity).

@@ -1,5 +1,20 @@
 # @de-otio/vestibulum
 
+## 0.3.5
+
+### Patch Changes
+
+- Add a server-side **`auth-login`** Function-URL handler that performs the
+  magic-link sign-in initiation (SignUp + InitiateAuth) on the backend instead
+  of the browser calling Cognito directly, gated by a **per-client-IP rate
+  limit** (default 10 / 15 min, keyed on the CloudFront-attested viewer IP).
+  This closes the per-IP/volumetric gap on login initiation independently of the
+  WAF. New `RuntimeEnv.LOGIN_IP_PER_WINDOW`.
+- Harden `create-auth-challenge`: when the app client has
+  `PreventUserExistenceErrors` enabled, an unknown address (no `email`
+  attribute) now returns a fail-closed challenge instead of throwing — removing
+  a user-existence oracle (400 vs 200) on the public InitiateAuth endpoint.
+
 ## 0.3.4
 
 ### Patch Changes

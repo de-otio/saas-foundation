@@ -231,6 +231,45 @@ describe("EdgeResources", () => {
     });
   });
 
+  describe("enableWebAcl opt-out", () => {
+    it("default (undefined) creates the Web ACL and exposes the handle", () => {
+      const stack = makeStack("EdgeWafDefaultStack");
+      const edge = new EdgeResources(stack, "Edge", {
+        domain: "app.example.com",
+        hostedZone: makeZone(stack),
+      });
+      expect(edge.webAcl).toBeDefined();
+      const template = Template.fromStack(stack);
+      template.resourceCountIs("AWS::WAFv2::WebACL", 1);
+    });
+
+    it("enableWebAcl: false creates no Web ACL and leaves the handle undefined", () => {
+      const stack = makeStack("EdgeWafOffStack");
+      const edge = new EdgeResources(stack, "Edge", {
+        domain: "app.example.com",
+        hostedZone: makeZone(stack),
+        enableWebAcl: false,
+      });
+      expect(edge.webAcl).toBeUndefined();
+      const template = Template.fromStack(stack);
+      template.resourceCountIs("AWS::WAFv2::WebACL", 0);
+      // The ACM certificate is still provisioned.
+      template.resourceCountIs("AWS::CertificateManager::Certificate", 1);
+    });
+
+    it("enableWebAcl: true is equivalent to the default", () => {
+      const stack = makeStack("EdgeWafOnStack");
+      const edge = new EdgeResources(stack, "Edge", {
+        domain: "app.example.com",
+        hostedZone: makeZone(stack),
+        enableWebAcl: true,
+      });
+      expect(edge.webAcl).toBeDefined();
+      const template = Template.fromStack(stack);
+      template.resourceCountIs("AWS::WAFv2::WebACL", 1);
+    });
+  });
+
   describe("region guard", () => {
     it("throws EdgeResourcesRegionError when stack region is not us-east-1", () => {
       const app = new cdk.App();

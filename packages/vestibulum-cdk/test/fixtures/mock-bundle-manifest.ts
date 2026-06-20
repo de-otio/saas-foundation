@@ -32,6 +32,7 @@ export const MOCK_BUNDLE_MANIFEST: BundleLockManifest = {
     "bounce-handler": { sha256: "0".repeat(64), sizeBytes: 1 },
     "auth-verify": { sha256: "0".repeat(64), sizeBytes: 1 },
     "auth-signout": { sha256: "0".repeat(64), sizeBytes: 1 },
+    "auth-login": { sha256: "0".repeat(64), sizeBytes: 1 },
     "check-auth": { sha256: "0".repeat(64), sizeBytes: 1 },
     "pre-token-generation": { sha256: "0".repeat(64), sizeBytes: 1 },
     "post-confirmation": { sha256: "0".repeat(64), sizeBytes: 1 },

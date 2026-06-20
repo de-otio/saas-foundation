@@ -1,5 +1,21 @@
 # @de-otio/vestibulum-cdk
 
+## 0.3.26
+
+### Patch Changes
+
+- Wire the new **`/auth-login`** backend endpoint into `MagicLinkAuthSite`: an
+  `AuthLoginFn` Lambda Function URL behind CloudFront OAC (mirrors `auth-verify`),
+  with `cognito-idp:SignUp`+`InitiateAuth` IAM, the rate-limit table grant, and a
+  `/auth-login*` behaviour. The login page now POSTs to this same-origin endpoint
+  instead of calling Cognito directly — closing the per-IP login gap without the
+  WAF.
+- Make the CloudFront WAFv2 Web ACL **optional** via `EdgeResources.enableWebAcl`
+  (default `true`). When `false`, no Web ACL is created and the distribution omits
+  `webAclId` — lets cost-sensitive (e.g. dev) deployments opt out. The
+  `waf-required` aspect tolerates the explicit opt-out while still catching
+  accidental omissions.
+
 ## 0.3.25
 
 ### Patch Changes

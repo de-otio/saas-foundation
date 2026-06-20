@@ -4,6 +4,41 @@ import { IConstruct } from "constructs";
 import { isInsideVestibulumSubtree } from "./subtree-marker.js";
 
 /**
+ * Construct-metadata `type` marking a `CfnDistribution` whose missing
+ * `WebACLId` is a deliberate opt-out (via `EdgeResources.enableWebAcl:
+ * false`), not an accidental omission. {@link WafRequiredAspect} skips
+ * any distribution carrying this marker.
+ */
+export const VESTIBULUM_WAF_OPT_OUT_MARKER_TYPE = "vestibulum:waf-opt-out";
+
+/**
+ * Marks a `CfnDistribution` (or the L2 `Distribution` wrapping it) as
+ * intentionally WAF-less. Called by `MagicLinkAuthSite` when the
+ * supplied `edge.webAcl` is `undefined` so the build-time
+ * {@link WafRequiredAspect} tolerates the opt-out instead of failing.
+ */
+export function markWafIntentionallyDisabled(scope: IConstruct): void {
+  scope.node.addMetadata(VESTIBULUM_WAF_OPT_OUT_MARKER_TYPE, true, {
+    stackTrace: false,
+  });
+}
+
+/**
+ * Returns `true` when `node` (inclusive of its scopes) carries the
+ * WAF opt-out marker.
+ */
+function isWafIntentionallyDisabled(node: IConstruct): boolean {
+  for (const scope of node.node.scopes) {
+    for (const entry of scope.node.metadata) {
+      if (entry.type === VESTIBULUM_WAF_OPT_OUT_MARKER_TYPE) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
  * Synth-time CDK Aspect that fails the build when a CloudFront
  * `Distribution` inside a Vestibulum subtree is missing a Web ACL.
  *
@@ -12,7 +47,9 @@ import { isInsideVestibulumSubtree } from "./subtree-marker.js";
  * distribution without `WebACLId` routes that traffic straight to the auth
  * Lambda, which is precisely what the WAF prevents.
  *
- * Scope: inert outside a Vestibulum subtree.
+ * Scope: inert outside a Vestibulum subtree, and inert for distributions
+ * explicitly marked WAF-less via {@link markWafIntentionallyDisabled}
+ * (the `EdgeResources.enableWebAcl: false` opt-out).
  */
 export class WafRequiredAspect implements IAspect {
   public visit(node: IConstruct): void {
@@ -20,6 +57,10 @@ export class WafRequiredAspect implements IAspect {
       return;
     }
     if (!isInsideVestibulumSubtree(node)) {
+      return;
+    }
+    if (isWafIntentionallyDisabled(node)) {
+      // Deliberate opt-out via EdgeResources.enableWebAcl: false.
       return;
     }
 

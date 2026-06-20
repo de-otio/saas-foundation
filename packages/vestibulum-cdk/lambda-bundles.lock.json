@@ -1,10 +1,15 @@
 {
-  "vestibulumVersion": "0.3.4",
+  "vestibulumVersion": "0.3.5",
   "bundles": {
     "admin": {
       "sha256": "sha256:fa868d34867915e47f3a794ea88a0ff2b846b0cba4ce9831d76538d8314f6db4",
       "sizeBytes": 343745,
       "filename": "admin/index.mjs"
+    },
+    "auth-login": {
+      "sha256": "sha256:f8c34c6f5da11f74569f2495e5a6d88c5099acbc41bf622ebdfc686b6413d45a",
+      "sizeBytes": 4196,
+      "filename": "auth-login/index.mjs"
     },
     "auth-signout": {
       "sha256": "sha256:dcdece61f5ae837b6d4d4896f90c015a2c9310255032a264d0654a9bf8fe43f4",
@@ -27,8 +32,8 @@
       "filename": "check-auth/index.mjs"
     },
     "create-auth": {
-      "sha256": "sha256:a07f43958c798feaa68807909e482fffb4c43153c052acdd59fd80a942837026",
-      "sizeBytes": 1238927,
+      "sha256": "sha256:accb2222f44ea8c32d6d782b9fd830af12fde8846ec9a11a13c1efddfdf71d36",
+      "sizeBytes": 1238958,
       "filename": "create-auth/index.mjs"
     },
     "define-auth": {

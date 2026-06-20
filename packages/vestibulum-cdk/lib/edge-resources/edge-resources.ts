@@ -108,9 +108,24 @@ export interface EdgeResourcesProps {
   readonly subjectAlternativeNames?: string[];
 
   /**
+   * Whether to create the CloudFront-scoped WAFv2 Web ACL.
+   *
+   * When `false`, no `CfnWebACL` is provisioned and {@link
+   * EdgeResources.webAcl} is `undefined`; the consumer's CloudFront
+   * distribution synthesises without a `WebACLId`. Use only where a
+   * WAF is supplied out-of-band or deliberately omitted (e.g. a
+   * dev/disposable stage) — the magic-link endpoint is a public auth
+   * API and the `WafRequiredAspect` enforces WAF presence for the
+   * default path.
+   * @default true
+   */
+  readonly enableWebAcl?: boolean;
+
+  /**
    * Override the default WAF managed rule set entirely. Passing a
    * single custom rule REPLACES the defaults — most consumers should
-   * extend `defaultWafRules()` rather than replace.
+   * extend `defaultWafRules()` rather than replace. Ignored when
+   * `enableWebAcl` is `false`.
    */
   readonly wafManagedRules?: wafv2.CfnWebACL.RuleProperty[];
 
@@ -181,9 +196,10 @@ export class EdgeResources extends Construct implements IEdgeResources {
 
   /**
    * The CloudFront-scoped WAFv2 Web ACL. Carries the default managed
-   * rule set unless `wafManagedRules` overrides it.
+   * rule set unless `wafManagedRules` overrides it. `undefined` when
+   * `enableWebAcl` is `false`.
    */
-  public readonly webAcl: wafv2.CfnWebACL;
+  public readonly webAcl: wafv2.CfnWebACL | undefined;
 
   /**
    * The CloudWatch metric namespace used by the Web ACL's visibility
@@ -234,56 +250,67 @@ export class EdgeResources extends Construct implements IEdgeResources {
     // Default rule set per defaultWafRules(); the `extraWafManagedRuleGroups`
     // prop opts in to paid groups (ATPRuleSet etc.) without changing
     // the default.
+    //
+    // `enableWebAcl: false` opts out entirely: no CfnWebACL is created
+    // and `this.webAcl` stays `undefined`, so the downstream distribution
+    // synthesises without a WebACLId. The rule/visibility config below is
+    // guarded accordingly — none of it is built when the ACL is off.
     // -------------------------------------------------------------------
-    const baseRules: wafv2.CfnWebACL.RuleProperty[] =
-      props.wafManagedRules ??
-      defaultWafRules({
-        resourceNamePrefix: this.resourceNamePrefix,
-        ...(props.authVerifyRateLimit !== undefined && {
-          authVerifyRateLimit: props.authVerifyRateLimit,
-        }),
-        ...(props.loginRateLimit !== undefined && {
-          loginRateLimit: props.loginRateLimit,
-        }),
-      });
+    const enableWebAcl = props.enableWebAcl ?? true;
+    if (enableWebAcl) {
+      const baseRules: wafv2.CfnWebACL.RuleProperty[] =
+        props.wafManagedRules ??
+        defaultWafRules({
+          resourceNamePrefix: this.resourceNamePrefix,
+          ...(props.authVerifyRateLimit !== undefined && {
+            authVerifyRateLimit: props.authVerifyRateLimit,
+          }),
+          ...(props.loginRateLimit !== undefined && {
+            loginRateLimit: props.loginRateLimit,
+          }),
+        });
 
-    const extras = (props.extraWafManagedRuleGroups ?? []).map(
-      (rg): wafv2.CfnWebACL.RuleProperty => ({
-        name: `AWS-${rg.name}`,
-        priority: rg.priority,
-        overrideAction: { none: {} },
-        statement: {
-          managedRuleGroupStatement: {
-            vendorName: "AWS",
-            name: rg.name,
-            ...(rg.managedRuleGroupConfigs && {
-              managedRuleGroupConfigs: rg.managedRuleGroupConfigs,
-            }),
+      const extras = (props.extraWafManagedRuleGroups ?? []).map(
+        (rg): wafv2.CfnWebACL.RuleProperty => ({
+          name: `AWS-${rg.name}`,
+          priority: rg.priority,
+          overrideAction: { none: {} },
+          statement: {
+            managedRuleGroupStatement: {
+              vendorName: "AWS",
+              name: rg.name,
+              ...(rg.managedRuleGroupConfigs && {
+                managedRuleGroupConfigs: rg.managedRuleGroupConfigs,
+              }),
+            },
           },
-        },
+          visibilityConfig: {
+            cloudWatchMetricsEnabled: true,
+            metricName: `AWS-${rg.name}`,
+            sampledRequestsEnabled: true,
+          },
+        }),
+      );
+
+      const rules: wafv2.CfnWebACL.RuleProperty[] = [...baseRules, ...extras];
+
+      const safeDomain = props.domain.replace(/\./g, "-");
+      const webAcl = new wafv2.CfnWebACL(this, "WebAcl", {
+        scope: "CLOUDFRONT",
+        defaultAction: { allow: {} },
         visibilityConfig: {
           cloudWatchMetricsEnabled: true,
-          metricName: `AWS-${rg.name}`,
+          metricName: `${this.resourceNamePrefix}Waf-${safeDomain}`,
           sampledRequestsEnabled: true,
         },
-      }),
-    );
-
-    const rules: wafv2.CfnWebACL.RuleProperty[] = [...baseRules, ...extras];
-
-    const safeDomain = props.domain.replace(/\./g, "-");
-    this.webAcl = new wafv2.CfnWebACL(this, "WebAcl", {
-      scope: "CLOUDFRONT",
-      defaultAction: { allow: {} },
-      visibilityConfig: {
-        cloudWatchMetricsEnabled: true,
-        metricName: `${this.resourceNamePrefix}Waf-${safeDomain}`,
-        sampledRequestsEnabled: true,
-      },
-      rules,
-      description: `${this.resourceNamePrefix} WAFv2 Web ACL for ${props.domain}.`,
-    });
-    this.webAcl.applyRemovalPolicy(removalPolicy);
+        rules,
+        description: `${this.resourceNamePrefix} WAFv2 Web ACL for ${props.domain}.`,
+      });
+      webAcl.applyRemovalPolicy(removalPolicy);
+      this.webAcl = webAcl;
+    } else {
+      this.webAcl = undefined;
+    }
 
     // Suppress unused-import lint for the const exported here only as
     // a side-effect for documentation symmetry.

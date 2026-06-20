@@ -59,6 +59,7 @@ export const BUNDLE_ENTRIES: ReadonlyArray<{
   { name: "bounce-handler", entry: "bounce-handler.ts", edge: false },
   { name: "auth-verify", entry: "auth-verify.ts", edge: false },
   { name: "auth-signout", entry: "auth-signout.ts", edge: false },
+  { name: "auth-login", entry: "auth-login.ts", edge: false },
   { name: "pre-token-generation", entry: "pre-token-generation.ts", edge: false },
   { name: "post-confirmation", entry: "post-confirmation.ts", edge: false },
   { name: "check-auth", entry: "check-auth.ts", edge: true },

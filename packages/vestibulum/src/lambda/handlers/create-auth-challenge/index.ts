@@ -142,7 +142,17 @@ export function createCreateAuthChallengeHandler(deps: CreateAuthChallengeHandle
   ): Promise<CreateAuthChallengeEvent> {
     const email = event.request.userAttributes.email;
     if (email === undefined || email === "") {
-      throw GENERIC_AUTH_ERROR();
+      // Enumeration hardening. When the app client has
+      // PreventUserExistenceErrors enabled, Cognito invokes this trigger with a
+      // phantom user (no `email` attribute) for an address that does NOT exist.
+      // Throwing here surfaces a 400 (UserLambdaValidationException) for unknown
+      // addresses while real ones get 200 — a user-existence oracle on the
+      // public InitiateAuth endpoint. Instead return a normal-looking challenge
+      // that the verifier rejects, exactly as the denylist / rate-limit paths
+      // do. Real users always carry the email attribute (SignUp ran first), so
+      // this only ever fires for unknown addresses — and crucially no mail is
+      // sent (we return before the SES call).
+      return failClosedChallenge(event, event.userName, "unknown_user", "");
     }
 
     const tokenTable = requiredEnv(RuntimeEnv.TOKEN_TABLE_NAME);

@@ -184,6 +184,10 @@ export type { BounceHandlerDeps } from "./lambda/handlers/bounce-handler/index.j
 export { createAuthVerifyHandler } from "./lambda/handlers/auth-verify/index.js";
 export type { AuthVerifyHandlerDeps } from "./lambda/handlers/auth-verify/index.js";
 
+// Auth-login handler factory
+export { createAuthLoginHandler } from "./lambda/handlers/auth-login/index.js";
+export type { AuthLoginHandlerDeps } from "./lambda/handlers/auth-login/index.js";
+
 // Auth-signout handler factory
 export { createAuthSignoutHandler } from "./lambda/handlers/auth-signout/index.js";
 export type { AuthSignoutHandlerDeps } from "./lambda/handlers/auth-signout/index.js";

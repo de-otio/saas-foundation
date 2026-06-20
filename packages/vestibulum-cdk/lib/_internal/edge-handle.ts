@@ -24,11 +24,12 @@ export interface IEdgeResources {
   readonly certificate: acm.ICertificate;
 
   /**
-   * The WAFv2 Web ACL in CloudFront scope.
+   * The WAFv2 Web ACL in CloudFront scope, or `undefined` when the
+   * Web ACL is disabled via `EdgeResources.enableWebAcl: false`.
    *
    * Carries the default managed rule set unless `wafManagedRules`
    * overrides it. Consumers attach this to their CloudFront distribution
-   * via `webAclId: edge.webAcl.attrArn`.
+   * via `webAclId: edge.webAcl?.attrArn` (guarding the optional).
    */
-  readonly webAcl: wafv2.CfnWebACL;
+  readonly webAcl: wafv2.CfnWebACL | undefined;
 }

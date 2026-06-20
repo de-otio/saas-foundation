@@ -34,7 +34,12 @@ import * as path from "node:path";
  * triggers plus the bounce-handler) — that helper lives next to the
  * Identity construct.
  */
-export const AUTH_SITE_BUNDLE_NAMES = ["auth-verify", "auth-signout", "check-auth"] as const;
+export const AUTH_SITE_BUNDLE_NAMES = [
+  "auth-verify",
+  "auth-signout",
+  "auth-login",
+  "check-auth",
+] as const;
 
 export type AuthSiteBundleName = (typeof AUTH_SITE_BUNDLE_NAMES)[number];
 

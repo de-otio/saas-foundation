@@ -31,6 +31,8 @@ export const RuntimeEnv = {
   TOKEN_SENDS_PER_WINDOW: "VESTIBULUM_TOKEN_SENDS_PER_WINDOW",
   /** Max sign-up attempts per email per rate-limit window. */
   SIGN_UPS_PER_WINDOW: "VESTIBULUM_SIGN_UPS_PER_WINDOW",
+  /** Max `/auth-login` attempts per client IP per rate-limit window. */
+  LOGIN_IP_PER_WINDOW: "VESTIBULUM_LOGIN_IP_PER_WINDOW",
   /** Allowed email domains for the PreSignUp allowlist (JSON-encoded). */
   ALLOWED_EMAIL_DOMAINS: "VESTIBULUM_ALLOWED_EMAIL_DOMAINS",
   /** Signup-mode flag (`'open'` | `'admin-invite-only'`). */

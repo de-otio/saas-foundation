@@ -49,6 +49,7 @@ import {
   aws_s3_deployment as s3deploy,
 } from "aws-cdk-lib";
 
+import { markWafIntentionallyDisabled } from "../aspects/waf-required.js";
 import { resolveMetricsNamespace, resolveResourceNamePrefix } from "../_internal/branding.js";
 import type { IEdgeResources } from "../_internal/edge-handle.js";
 import type { IMagicLinkIdentity } from "../_internal/identity-handle.js";
@@ -99,6 +100,14 @@ export interface AuthLambdaConcurrencyProps {
    * @default 5
    */
   readonly authSignout?: number;
+  /**
+   * Reserved concurrency for `auth-login`. Mirrors `auth-verify`'s
+   * cost-DoS envelope (S-C9): 20 covers a legitimate burst for a
+   * low-traffic internal site while capping the worst-case
+   * Lambda + Cognito cost under attack.
+   * @default 20
+   */
+  readonly authLogin?: number;
 }
 
 /**
@@ -231,6 +240,8 @@ export class MagicLinkAuthSite extends Construct {
   public readonly authVerifyUrl: lambda.FunctionUrl;
   /** Function URL of `auth-signout`. Reachable only via CloudFront OAC. */
   public readonly authSignoutUrl: lambda.FunctionUrl;
+  /** Function URL of `auth-login`. Reachable only via CloudFront OAC. */
+  public readonly authLoginUrl: lambda.FunctionUrl;
   /** Auto-created Cognito website app client. */
   public readonly websiteClient: cognito.UserPoolClient;
   /** CloudWatch metrics namespace handle. The richer dashboard-ready
@@ -358,12 +369,54 @@ export class MagicLinkAuthSite extends Construct {
     );
 
     // -------------------------------------------------------------------
+    // auth-login Lambda.
+    //
+    // Mirrors auth-verify: regional lambda.Function + Code.fromAsset from
+    // the pre-built bundle. Drives the browser sign-in/sign-up POST —
+    // calls Cognito SignUp + InitiateAuth and reads/writes the shared
+    // per-IP rate-limit DynamoDB table (S-C9 cost-DoS envelope).
+    // -------------------------------------------------------------------
+    const authLoginConcurrency = props.reservedConcurrency?.authLogin ?? 20;
+    const authLoginFn = new lambda.Function(this, "AuthLoginFn", {
+      code: lambda.Code.fromAsset(bundlePaths["auth-login"]),
+      handler: "index.handler",
+      runtime: lambda.Runtime.NODEJS_22_X,
+      // Same Cognito-cascade headroom as auth-verify: SignUp / InitiateAuth
+      // over the network plus a cold start overruns the 3s/128MB defaults.
+      timeout: Duration.seconds(10),
+      memorySize: 256,
+      reservedConcurrentExecutions: authLoginConcurrency,
+      logRetention: logs.RetentionDays.ONE_MONTH,
+      description: `${this.namespacePrefix} auth-login endpoint for ${domain}.`,
+      environment: {
+        [RuntimeEnv.COGNITO_CLIENT_ID]: this.websiteClient.userPoolClientId,
+        [RuntimeEnv.DOMAIN]: domain,
+        [RuntimeEnv.RATE_LIMIT_TABLE_NAME]: identity.rateLimitTable.tableName,
+        // LOGIN_IP_PER_WINDOW: per-IP login attempts per rate-limit window.
+        // The constant is added to RuntimeEnv by the concurrent vestibulum
+        // change; referenced here per the shared contract.
+        [RuntimeEnv.LOGIN_IP_PER_WINDOW]: "10",
+        [RuntimeEnv.METRICS_NAMESPACE]: metricsNamespace,
+      },
+    });
+    authLoginFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["cognito-idp:SignUp", "cognito-idp:InitiateAuth"],
+        resources: [identity.cognitoPool.userPoolArn],
+      }),
+    );
+    identity.rateLimitTable.grantReadWriteData(authLoginFn);
+
+    // -------------------------------------------------------------------
     // Function URLs — authType AWS_IAM (required for OAC).
     // -------------------------------------------------------------------
     this.authVerifyUrl = authVerifyFn.addFunctionUrl({
       authType: lambda.FunctionUrlAuthType.AWS_IAM,
     });
     this.authSignoutUrl = authSignoutFn.addFunctionUrl({
+      authType: lambda.FunctionUrlAuthType.AWS_IAM,
+    });
+    this.authLoginUrl = authLoginFn.addFunctionUrl({
       authType: lambda.FunctionUrlAuthType.AWS_IAM,
     });
 
@@ -626,7 +679,7 @@ export class MagicLinkAuthSite extends Construct {
     this.distribution = new cloudfront.Distribution(this, "Distribution", {
       domainNames: [domain],
       certificate: edge.certificate,
-      webAclId: edge.webAcl.attrArn,
+      ...(edge.webAcl ? { webAclId: edge.webAcl.attrArn } : {}),
       priceClass: props.priceClass ?? cloudfront.PriceClass.PRICE_CLASS_100,
       httpVersion: cloudfront.HttpVersion.HTTP2_AND_3,
       minimumProtocolVersion: cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021,
@@ -673,6 +726,15 @@ export class MagicLinkAuthSite extends Construct {
           originRequestPolicy: authOriginRequestPolicy,
           allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
         },
+        "/auth-login*": {
+          origin: origins.FunctionUrlOrigin.withOriginAccessControl(this.authLoginUrl),
+          ...commonBehavior,
+          // auth-login is a POST endpoint that sets the id-token cookie via
+          // Set-Cookie; forward cookies (Host excluded) and allow all methods,
+          // mirroring /auth-verify*.
+          originRequestPolicy: authOriginRequestPolicy,
+          allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
+        },
         "/auth-signout": {
           origin: origins.FunctionUrlOrigin.withOriginAccessControl(this.authSignoutUrl),
           ...commonBehavior,
@@ -683,6 +745,15 @@ export class MagicLinkAuthSite extends Construct {
         },
       },
     });
+
+    // When the supplied edge resources opt out of the Web ACL
+    // (`EdgeResources.enableWebAcl: false`), the distribution above
+    // synthesises without a `WebACLId`. Mark it so the build-time
+    // `WafRequiredAspect` treats the absence as deliberate rather than
+    // failing the synth.
+    if (!edge.webAcl) {
+      markWafIntentionallyDisabled(this.distribution.node.defaultChild as Construct);
+    }
 
     // OAC POST support. CloudFront OAC for a Lambda Function URL requires the
     // CloudFront service principal to hold BOTH `lambda:InvokeFunctionUrl`
@@ -706,6 +777,11 @@ export class MagicLinkAuthSite extends Construct {
       sourceArn: distributionArn,
     });
     authSignoutFn.addPermission("AuthSignoutOacInvokeFunction", {
+      principal: new iam.ServicePrincipal("cloudfront.amazonaws.com"),
+      action: "lambda:InvokeFunction",
+      sourceArn: distributionArn,
+    });
+    authLoginFn.addPermission("AuthLoginOacInvokeFunction", {
       principal: new iam.ServicePrincipal("cloudfront.amazonaws.com"),
       action: "lambda:InvokeFunction",
       sourceArn: distributionArn,

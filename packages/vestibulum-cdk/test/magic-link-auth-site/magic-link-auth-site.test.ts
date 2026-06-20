@@ -20,6 +20,7 @@ import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { WafRequiredAspect } from "../../lib/aspects/waf-required.js";
 import { EdgeResources } from "../../lib/edge-resources/index.js";
 import {
   MagicLinkAuthSite,
@@ -191,9 +192,10 @@ describe("MagicLinkAuthSite", () => {
         .map((r) => r.Properties as { Action: string; Principal: string })
         .filter((p) => p.Principal === "cloudfront.amazonaws.com");
       const actions = cfPerms.map((p) => p.Action);
-      // One InvokeFunctionUrl + one InvokeFunction per auth Function URL (×2).
-      expect(actions.filter((a) => a === "lambda:InvokeFunctionUrl").length).toBeGreaterThanOrEqual(2);
-      expect(actions.filter((a) => a === "lambda:InvokeFunction").length).toBe(2);
+      // One InvokeFunctionUrl + one InvokeFunction per auth Function URL.
+      // Three auth Function URLs now: auth-verify, auth-signout, auth-login.
+      expect(actions.filter((a) => a === "lambda:InvokeFunctionUrl").length).toBeGreaterThanOrEqual(3);
+      expect(actions.filter((a) => a === "lambda:InvokeFunction").length).toBe(3);
     });
 
     it("scopes the InvokeFunction grants to this distribution via SourceArn", () => {
@@ -284,6 +286,170 @@ describe("MagicLinkAuthSite", () => {
         AllowedOAuthScopes: Match.arrayWith(["openid", "email"]),
         GenerateSecret: false,
       });
+    });
+  });
+
+  describe("auth-login endpoint (mirrors auth-verify)", () => {
+    let template: Template;
+    let stacks: TestStacks;
+
+    beforeAll(() => {
+      stacks = makeSite("AuthSiteAuthLoginStack");
+      template = Template.fromStack(stacks.stack);
+    });
+
+    /** Returns the distribution's additional CacheBehaviors. */
+    function cacheBehaviors(): Array<{ PathPattern: string; OriginRequestPolicyId?: unknown }> {
+      const dists = template.findResources("AWS::CloudFront::Distribution");
+      const dist = Object.values(dists)[0] as {
+        Properties: { DistributionConfig: { CacheBehaviors?: unknown[] } };
+      };
+      return (dist.Properties.DistributionConfig.CacheBehaviors ?? []) as Array<{
+        PathPattern: string;
+        OriginRequestPolicyId?: unknown;
+      }>;
+    }
+
+    it("synthesises a /auth-login* behaviour with a FunctionUrlOrigin (cookie-forwarding, no cache)", () => {
+      const behaviors = cacheBehaviors();
+      const login = behaviors.find((b) => b.PathPattern === "/auth-login*");
+      expect(login, "/auth-login* behaviour").toBeDefined();
+      // FunctionUrlOrigin behaviour forwards cookies via an origin request policy.
+      expect(login!.OriginRequestPolicyId, "/auth-login* OriginRequestPolicyId").toBeTruthy();
+    });
+
+    it("exposes the auth-login Function URL handle", () => {
+      expect(stacks.site.authLoginUrl).toBeDefined();
+    });
+
+    it("creates the AuthLoginFn with auth-verify-style timeout/memory/runtime", () => {
+      template.hasResourceProperties("AWS::Lambda::Function", {
+        Description: Match.stringLikeRegexp("Vestibulum auth-login"),
+        Runtime: "nodejs22.x",
+        Timeout: 10,
+        MemorySize: 256,
+        ReservedConcurrentExecutions: 20,
+      });
+    });
+
+    it("grants AuthLoginFn the Cognito SignUp + InitiateAuth policy on the user pool", () => {
+      template.hasResourceProperties("AWS::IAM::Policy", {
+        PolicyDocument: Match.objectLike({
+          Statement: Match.arrayWith([
+            Match.objectLike({
+              Action: Match.arrayWith(["cognito-idp:SignUp", "cognito-idp:InitiateAuth"]),
+            }),
+          ]),
+        }),
+      });
+    });
+
+    it("sets the rate-limit table env var on AuthLoginFn", () => {
+      // The AuthLoginFn reads/writes the shared per-IP rate-limit table; assert
+      // the rate-limit table env var (VESTIBULUM_RATE_LIMIT_TABLE) is wired.
+      // (LOGIN_IP_PER_WINDOW depends on the concurrent vestibulum RuntimeEnv
+      // change; the table name env var is the stable assertion here.)
+      const fns = template.findResources("AWS::Lambda::Function");
+      const loginFn = Object.values(fns).find((r) =>
+        /Vestibulum auth-login/.test(
+          (r.Properties as { Description?: string }).Description ?? "",
+        ),
+      );
+      expect(loginFn, "AuthLoginFn").toBeDefined();
+      const env = (
+        loginFn!.Properties as { Environment?: { Variables?: Record<string, unknown> } }
+      ).Environment?.Variables;
+      expect(env, "AuthLoginFn Environment.Variables").toBeDefined();
+      expect(env!["VESTIBULUM_RATE_LIMIT_TABLE"]).toBeDefined();
+    });
+
+    it("grants AuthLoginFn read+write on the rate-limit DynamoDB table", () => {
+      // grantReadWriteData emits both read (GetItem) and write (PutItem)
+      // DynamoDB actions in a single statement. Scan every IAM policy for a
+      // statement carrying both.
+      const policies = template.findResources("AWS::IAM::Policy");
+      const hasReadWrite = Object.values(policies).some((p) => {
+        const doc = JSON.stringify(p);
+        return doc.includes("dynamodb:PutItem") && doc.includes("dynamodb:GetItem");
+      });
+      expect(hasReadWrite).toBe(true);
+    });
+
+    it("adds the AuthLoginOacInvokeFunction permission for CloudFront, scoped to the distribution", () => {
+      const perms = template.findResources("AWS::Lambda::Permission");
+      const cfPerms = Object.values(perms)
+        .map((r) => r.Properties as { Action: string; Principal: string; SourceArn?: unknown });
+      // Three InvokeFunction grants now: auth-verify, auth-signout, auth-login.
+      const invoke = cfPerms.filter(
+        (p) => p.Principal === "cloudfront.amazonaws.com" && p.Action === "lambda:InvokeFunction",
+      );
+      expect(invoke.length).toBe(3);
+      for (const p of invoke) {
+        expect(p.SourceArn, "InvokeFunction SourceArn").toBeTruthy();
+      }
+    });
+  });
+
+  describe("WAF opt-out via EdgeResources.enableWebAcl", () => {
+    function makeSiteWithEdge(
+      stackName: string,
+      enableWebAcl: boolean | undefined,
+    ): { stack: cdk.Stack; app: cdk.App } {
+      const app = new cdk.App();
+      const stack = new cdk.Stack(app, stackName, {
+        env: TEST_ENV,
+        stackName,
+        crossRegionReferences: true,
+      });
+      const identity = new MockIdentity(stack, "Identity");
+      const zone = cdk.aws_route53.HostedZone.fromHostedZoneAttributes(stack, "Zone", {
+        hostedZoneId: "Z123456789EXAMPLE",
+        zoneName: "example.com",
+      });
+      const edge = new EdgeResources(stack, "Edge", {
+        domain: "app.example.com",
+        hostedZone: zone,
+        ...(enableWebAcl !== undefined && { enableWebAcl }),
+      });
+      const originBucket = new s3.Bucket(stack, "OriginBucket") as unknown as s3.IBucket;
+      const origin = origins.S3BucketOrigin.withOriginAccessControl(originBucket);
+      new MagicLinkAuthSite(stack, "Site", {
+        domain: "app.example.com",
+        origin,
+        edge,
+        identity,
+        _packageRoot: makeAppRoot(),
+        _bundleManifest: MOCK_BUNDLE_MANIFEST,
+      });
+      return { stack, app };
+    }
+
+    it("default (enableWebAcl undefined): distribution has a WebACLId and a CfnWebACL exists", () => {
+      const { stack } = makeSiteWithEdge("AuthSiteWafDefaultStack", undefined);
+      const template = Template.fromStack(stack);
+      template.resourceCountIs("AWS::WAFv2::WebACL", 1);
+      template.hasResourceProperties("AWS::CloudFront::Distribution", {
+        DistributionConfig: Match.objectLike({ WebACLId: Match.anyValue() }),
+      });
+    });
+
+    it("enableWebAcl: false — no WebACL resource and the distribution has no WebACLId", () => {
+      const { stack } = makeSiteWithEdge("AuthSiteWafOffStack", false);
+      const template = Template.fromStack(stack);
+      template.resourceCountIs("AWS::WAFv2::WebACL", 0);
+      const dists = template.findResources("AWS::CloudFront::Distribution");
+      const cfg = (
+        Object.values(dists)[0] as {
+          Properties: { DistributionConfig: { WebACLId?: unknown } };
+        }
+      ).Properties.DistributionConfig;
+      expect(cfg.WebACLId).toBeUndefined();
+    });
+
+    it("enableWebAcl: false — synth does not throw (WafRequiredAspect tolerates the opt-out)", () => {
+      const { app } = makeSiteWithEdge("AuthSiteWafOffSynthStack", false);
+      cdk.Aspects.of(app).add(new WafRequiredAspect());
+      expect(() => app.synth({ force: true })).not.toThrow();
     });
   });
 

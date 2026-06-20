@@ -147,12 +147,13 @@ describe("readLockManifest", () => {
 });
 
 describe("committed lock manifest", () => {
-  it("can be read and has the expected 14 bundle entries", async () => {
+  it("can be read and has the expected 15 bundle entries", async () => {
     const repoRoot = path.resolve(import.meta.dirname ?? __dirname, "..", "..");
     const lockPath = path.join(repoRoot, "lambda-bundles.lock.json");
     const manifest = await readLockManifest(lockPath);
     expect(Object.keys(manifest.bundles).sort()).toEqual([
       "admin",
+      "auth-login",
       "auth-signout",
       "auth-verify",
       "bounce-handler",

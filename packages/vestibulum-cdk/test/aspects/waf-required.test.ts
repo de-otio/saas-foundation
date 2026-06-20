@@ -5,7 +5,10 @@ import { CfnDistribution } from "aws-cdk-lib/aws-cloudfront";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as wafv2 from "aws-cdk-lib/aws-wafv2";
 import { Construct } from "constructs";
-import { WafRequiredAspect } from "../../lib/aspects/waf-required.js";
+import {
+  WafRequiredAspect,
+  markWafIntentionallyDisabled,
+} from "../../lib/aspects/waf-required.js";
 import { markVestibulumSubtreeRoot } from "../../lib/aspects/subtree-marker.js";
 
 function makeApp(markedAsVestibulum: boolean, webAclId?: string): App {
@@ -123,6 +126,38 @@ describe("WafRequiredAspect", () => {
 
     Aspects.of(app).add(new WafRequiredAspect());
     expect(() => app.synth()).toThrow(/WafRequiredAspect/);
+  });
+
+  it("tolerates a Vestibulum distribution with no webAclId when explicitly marked WAF-disabled", () => {
+    const app = new App();
+    const stack = new Stack(app, "TestStack", {
+      env: { account: "123456789012", region: "eu-west-1" },
+    });
+    const root = new Construct(stack, "VestibulumRoot");
+    markVestibulumSubtreeRoot(root);
+
+    const dist = new CfnDistribution(root, "Dist", {
+      distributionConfig: {
+        enabled: true,
+        defaultCacheBehavior: {
+          viewerProtocolPolicy: "redirect-to-https",
+          targetOriginId: "origin",
+          forwardedValues: { queryString: false },
+        },
+        origins: [
+          {
+            id: "origin",
+            domainName: "example.com",
+            s3OriginConfig: {},
+          },
+        ],
+        // webAclId intentionally omitted — but marked as a deliberate opt-out.
+      },
+    });
+    markWafIntentionallyDisabled(dist);
+
+    Aspects.of(app).add(new WafRequiredAspect());
+    expect(() => app.synth()).not.toThrow();
   });
 
   it("is inert when distributionConfig is a Token (unresolved cross-stack ref)", () => {

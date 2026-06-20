@@ -62,6 +62,14 @@ export const RuntimeEnv = {
   SIGN_UPS_PER_WINDOW: "VESTIBULUM_SIGN_UPS_PER_WINDOW",
 
   /**
+   * Maximum login attempts per client IP per rate-limit window, enforced by the
+   * auth-login Function URL handler. Defaults to 10 per 15-minute window when
+   * unset. Shares RATE_LIMIT_TABLE_NAME with the per-email limiter; the IP
+   * keyspace is hashed under a distinct prefix so the buckets never collide.
+   */
+  LOGIN_IP_PER_WINDOW: "VESTIBULUM_LOGIN_IP_PER_WINDOW",
+
+  /**
    * Allowed email domains for the PreSignUp allowlist (JSON-encoded string[]).
    * Injected at synth time from MagicLinkIdentityProps.allowedEmailDomains.
    */
