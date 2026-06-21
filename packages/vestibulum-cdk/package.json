@@ -47,6 +47,7 @@
   },
   "devDependencies": {
     "@de-otio/vestibulum": "*",
+    "@types/adm-zip": "^0.5.7",
     "@types/node": "^25.0.0",
     "aws-cdk-lib": "^2.200.0",
     "cdk-nag": "^2.0.0",
@@ -55,5 +56,8 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.16"
   }
 }

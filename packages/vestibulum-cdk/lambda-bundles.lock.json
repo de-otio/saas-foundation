@@ -31,6 +31,11 @@
       "sizeBytes": 1235410,
       "filename": "check-auth/index.mjs"
     },
+    "check-auth-config-baker": {
+      "sha256": "sha256:dde5f7fdfa63f95c8559a628a67130a31599db115c513d8e35dd74c40368b212",
+      "sizeBytes": 36584,
+      "filename": "check-auth-config-baker/index.mjs"
+    },
     "create-auth": {
       "sha256": "sha256:0e739f1731f2ce39f464b6b8b038720bed1f4373aef78903aa983fd9139ad6eb",
       "sizeBytes": 1239331,

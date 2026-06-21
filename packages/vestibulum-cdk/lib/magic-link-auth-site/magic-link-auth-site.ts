@@ -33,15 +33,19 @@
  */
 
 import * as path from "node:path";
+import * as fs from "node:fs";
 
 import { Construct } from "constructs";
+import { NagSuppressions } from "cdk-nag";
 import {
+  CustomResource,
   Duration,
   RemovalPolicy,
   Stack,
   aws_cloudfront as cloudfront,
   aws_cloudfront_origins as origins,
   aws_cognito as cognito,
+  custom_resources as customResources,
   aws_iam as iam,
   aws_lambda as lambda,
   aws_logs as logs,
@@ -488,6 +492,135 @@ export class MagicLinkAuthSite extends Construct {
     void edgeLogGroup;
 
     // -------------------------------------------------------------------
+    // check-auth deploy-time config baker.
+    //
+    // The edge bundle ships with `PLACEHOLDER_*` pool/client/region seams
+    // (Lambda@Edge can't read env vars, and the consumer supplies these as
+    // deploy-time CFN tokens). This custom resource injects the concrete
+    // values at deploy time and republishes the function version; the
+    // CloudFront viewer-request association below points at THAT version.
+    //
+    // The baker patches a PRISTINE copy of the base bundle (staged beside
+    // its handler), not the deployed code — so a config-only change always
+    // re-bakes from clean placeholders.
+    // -------------------------------------------------------------------
+    const rawOutdir = Stack.of(this).node.tryGetContext("aws:cdk:outdir") ?? "cdk.out";
+    const appOutdir = path.resolve(typeof rawOutdir === "string" ? rawOutdir : "cdk.out");
+    const bakerStageDir = path.join(appOutdir, ".vestibulum-check-auth-baker", this.node.addr);
+    fs.mkdirSync(bakerStageDir, { recursive: true });
+    fs.copyFileSync(
+      path.join(bundlePaths["check-auth-config-baker"], "index.mjs"),
+      path.join(bakerStageDir, "index.mjs"),
+    );
+    fs.copyFileSync(
+      path.join(bundlePaths["check-auth"], "index.mjs"),
+      path.join(bakerStageDir, "check-auth-base.mjs"),
+    );
+
+    const checkAuthBaker = new lambda.Function(this, "CheckAuthConfigBakerFn", {
+      runtime: lambda.Runtime.NODEJS_22_X,
+      handler: "index.handler",
+      code: lambda.Code.fromAsset(bakerStageDir),
+      timeout: Duration.minutes(3),
+      memorySize: 256,
+      logRetention: logs.RetentionDays.ONE_MONTH,
+      description:
+        "Vestibulum check-auth config baker: injects concrete Cognito config " +
+        "into the Lambda@Edge bundle at deploy time and republishes the version.",
+    });
+    // The edge function lives in us-east-1; grant the baker the narrow
+    // code/version writes on that function only.
+    checkAuthBaker.addToRolePolicy(
+      new iam.PolicyStatement({
+        sid: "BakeCheckAuthConfig",
+        actions: ["lambda:UpdateFunctionCode", "lambda:PublishVersion"],
+        resources: [checkAuthFn.lambda.functionArn, `${checkAuthFn.lambda.functionArn}:*`],
+      }),
+    );
+
+    const checkAuthBakerProvider = new customResources.Provider(
+      this,
+      "CheckAuthConfigBakerProvider",
+      { onEventHandler: checkAuthBaker },
+    );
+
+    const checkAuthBake = new CustomResource(this, "CheckAuthConfigBake", {
+      serviceToken: checkAuthBakerProvider.serviceToken,
+      resourceType: "Custom::VestibulumCheckAuthConfig",
+      properties: {
+        FunctionName: checkAuthFn.functionName,
+        FunctionRegion: "us-east-1",
+        UserPoolId: identity.cognitoPool.userPoolId,
+        ClientId: this.websiteClient.userPoolClientId,
+        HomeRegion: Stack.of(this).region,
+        // Forces a re-bake when the base bundle changes (e.g. a vestibulum
+        // upgrade) even if the config values are unchanged.
+        BaseSha: manifest.bundles["check-auth"]?.sha256 ?? "unknown",
+      },
+    });
+    // Bake only after the function exists.
+    checkAuthBake.node.addDependency(checkAuthFn);
+
+    // The published, config-baked version the CloudFront viewer-request
+    // association uses. The version ARN is a deploy-time token, so its region
+    // is unresolved at synth — CloudFront's "edge functions must be us-east-1"
+    // check passes on the unresolved region, and the ARN itself is us-east-1.
+    const bakedCheckAuthVersion = lambda.Version.fromVersionArn(
+      this,
+      "CheckAuthBakedVersion",
+      checkAuthBake.getAttString("FunctionVersionArn"),
+    );
+
+    // cdk-nag suppressions for the config baker. The baker function's IAM5 is
+    // an intentional, narrowly-scoped wildcard (the function's version ARNs);
+    // the Provider framework findings are inherent to the CDK pattern (as with
+    // the SES verification-wait resources in MagicLinkIdentity).
+    NagSuppressions.addResourceSuppressions(
+      checkAuthBaker,
+      [
+        {
+          id: "AwsSolutions-IAM4",
+          reason:
+            "The baker uses the CDK-managed AWSLambdaBasicExecutionRole for its " +
+            "own CloudWatch Logs only.",
+        },
+        {
+          id: "AwsSolutions-IAM5",
+          reason:
+            "lambda:UpdateFunctionCode/PublishVersion are scoped to the single " +
+            "check-auth function and its version ARNs (`<fn>` and `<fn>:*`); the " +
+            "`:*` wildcard only spans that one function's published versions.",
+        },
+      ],
+      true,
+    );
+    NagSuppressions.addResourceSuppressions(
+      checkAuthBakerProvider,
+      [
+        {
+          id: "AwsSolutions-L1",
+          reason:
+            "Provider framework Lambda runtime is managed by aws-cdk-lib's " +
+            "custom_resources.Provider and pinned by the CDK version, not " +
+            "consumer-controllable.",
+        },
+        {
+          id: "AwsSolutions-IAM4",
+          reason:
+            "Provider framework role uses the CDK-managed " +
+            "AWSLambdaBasicExecutionRole for its own CloudWatch Logs.",
+        },
+        {
+          id: "AwsSolutions-IAM5",
+          reason:
+            "Provider framework role wildcards are inherent to the " +
+            "custom_resources.Provider pattern and not consumer-controllable.",
+        },
+      ],
+      true,
+    );
+
+    // -------------------------------------------------------------------
     // Login-page S3 bucket + BucketDeployment.
     // -------------------------------------------------------------------
     const lifecycleRules = resolveLifecycleRules(
@@ -682,7 +815,9 @@ export class MagicLinkAuthSite extends Construct {
         cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
         edgeLambdas: [
           {
-            functionVersion: checkAuthFn,
+            // The config-baked version (deploy-time-injected Cognito config),
+            // NOT the raw EdgeFunction whose code still has PLACEHOLDER_* seams.
+            functionVersion: bakedCheckAuthVersion,
             eventType: cloudfront.LambdaEdgeEventType.VIEWER_REQUEST,
           },
         ],
