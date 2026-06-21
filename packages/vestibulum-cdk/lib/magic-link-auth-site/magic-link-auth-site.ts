@@ -504,7 +504,7 @@ export class MagicLinkAuthSite extends Construct {
     // its handler), not the deployed code — so a config-only change always
     // re-bakes from clean placeholders.
     // -------------------------------------------------------------------
-    const rawOutdir = Stack.of(this).node.tryGetContext("aws:cdk:outdir") ?? "cdk.out";
+    const rawOutdir: unknown = Stack.of(this).node.tryGetContext("aws:cdk:outdir");
     const appOutdir = path.resolve(typeof rawOutdir === "string" ? rawOutdir : "cdk.out");
     const bakerStageDir = path.join(appOutdir, ".vestibulum-check-auth-baker", this.node.addr);
     fs.mkdirSync(bakerStageDir, { recursive: true });

@@ -46,6 +46,7 @@
     "constructs": "^10.0.0"
   },
   "devDependencies": {
+    "@aws-sdk/client-lambda": "^3.700.0",
     "@de-otio/vestibulum": "*",
     "@types/adm-zip": "^0.5.7",
     "@types/node": "^25.0.0",
