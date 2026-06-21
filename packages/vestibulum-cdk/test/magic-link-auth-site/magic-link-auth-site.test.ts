@@ -990,4 +990,57 @@ describe("MagicLinkAuthSite", () => {
       expect(deployment.Properties.SourceObjectKeys.length).toBe(2);
     });
   });
+
+  describe("check-auth deploy-time config baker", () => {
+    let template: Template;
+
+    beforeAll(() => {
+      template = Template.fromStack(makeSite("AuthSiteBakerStack").stack);
+    });
+
+    it("creates the config-baker custom resource with concrete Cognito config inputs", () => {
+      template.resourceCountIs("Custom::VestibulumCheckAuthConfig", 1);
+      template.hasResourceProperties("Custom::VestibulumCheckAuthConfig", {
+        FunctionRegion: "us-east-1",
+        UserPoolId: Match.anyValue(),
+        ClientId: Match.anyValue(),
+      });
+    });
+
+    it("points the viewer-request gate at the BAKED version, not the placeholder edge function", () => {
+      template.hasResourceProperties("AWS::CloudFront::Distribution", {
+        DistributionConfig: Match.objectLike({
+          DefaultCacheBehavior: Match.objectLike({
+            LambdaFunctionAssociations: Match.arrayWith([
+              Match.objectLike({
+                EventType: "viewer-request",
+                // GetAtt the baker custom resource's published version ARN —
+                // proves the gate runs config-baked code, not PLACEHOLDER_*.
+                LambdaFunctionARN: Match.objectLike({
+                  "Fn::GetAtt": Match.arrayWith(["FunctionVersionArn"]),
+                }),
+              }),
+            ]),
+          }),
+        }),
+      });
+    });
+
+    it("grants the baker only code/version writes (no broad lambda perms)", () => {
+      template.hasResourceProperties("AWS::IAM::Policy", {
+        PolicyDocument: Match.objectLike({
+          Statement: Match.arrayWith([
+            Match.objectLike({
+              Action: [
+                "lambda:GetFunction",
+                "lambda:GetFunctionConfiguration",
+                "lambda:UpdateFunctionCode",
+                "lambda:PublishVersion",
+              ],
+            }),
+          ]),
+        }),
+      });
+    });
+  });
 });

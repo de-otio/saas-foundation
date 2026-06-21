@@ -34,6 +34,7 @@ export const MOCK_BUNDLE_MANIFEST: BundleLockManifest = {
     "auth-signout": { sha256: "0".repeat(64), sizeBytes: 1 },
     "auth-login": { sha256: "0".repeat(64), sizeBytes: 1 },
     "check-auth": { sha256: "0".repeat(64), sizeBytes: 1 },
+    "check-auth-config-baker": { sha256: "0".repeat(64), sizeBytes: 1 },
     "pre-token-generation": { sha256: "0".repeat(64), sizeBytes: 1 },
     "post-confirmation": { sha256: "0".repeat(64), sizeBytes: 1 },
   },
@@ -62,9 +63,12 @@ export function makeMockPackageRoot(): string {
   for (const name of Object.keys(MOCK_BUNDLE_MANIFEST.bundles)) {
     const dir = path.join(bundlesDir, name);
     fs.mkdirSync(dir, { recursive: true });
+    // Real bundles are `index.mjs`; the check-auth config baker stages the
+    // `index.mjs` of both its own bundle and the `check-auth` base bundle by
+    // exact filename, so the mock must use the real extension.
     fs.writeFileSync(
-      path.join(dir, "index.js"),
-      `// Mock bundle for ${name}\nexports.handler = async () => ({});\n`,
+      path.join(dir, "index.mjs"),
+      `// Mock bundle for ${name}\nexport const handler = async () => ({});\n`,
     );
   }
   const loginPagesDir = path.join(root, "login-pages");

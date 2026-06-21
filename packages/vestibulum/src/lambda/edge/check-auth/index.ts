@@ -38,6 +38,7 @@ import type { JwtHeader } from "aws-jwt-verify/jwt-model";
 import { TtlBoundedJwksCache } from "./jwks-cache.js";
 import { getCookieValue, type CloudFrontHeaders } from "./cookie.js";
 import { resolveCognitoEndpoint, type ResolvedCognitoEndpoint } from "./jwks-region-resolver.js";
+import { ID_TOKEN_COOKIE_NAME } from "../../shared/cookie-names.js";
 
 /**
  * Edge-runtime configuration shape. WS-08 emits a concrete object that
@@ -59,20 +60,24 @@ export interface VestibulumEdgeConfig {
   readonly loginPath: string;
 }
 
-// __VESTIBULUM_CONFIG_START__
-// WS-08 replaces the lines between START and END with a generated config
-// literal at synth time. The placeholder values below are deliberately
-// invalid (the userPoolId fails `resolveCognitoEndpoint`); if a build
-// somehow ships the placeholder, every request fails closed to /login
-// rather than authenticating against a wrong pool.
+// Deploy-time config-injection seam. Lambda@Edge cannot read environment
+// variables, and the consumer supplies the pool/client ids as deploy-time
+// CloudFormation tokens (not concrete at synth) — so `MagicLinkAuthSite`'s
+// `CheckAuthConfigBaker` custom resource string-replaces the three
+// `PLACEHOLDER_*` literals below with concrete values at deploy time and
+// republishes the function version. The literals are intentionally invalid
+// (`resolveCognitoEndpoint` rejects the pool id): if a build ever ships them,
+// every request fails CLOSED to /login rather than trusting a wrong pool.
+//
+// `idTokenCookieName` and `loginPath` are NOT injected — they are concrete and
+// must match the regional handlers, so they come from the shared constant.
 let VESTIBULUM_CONFIG: VestibulumEdgeConfig = {
   userPoolId: "PLACEHOLDER_USER_POOL_ID",
   clientId: "PLACEHOLDER_CLIENT_ID",
   homeRegion: "PLACEHOLDER_REGION",
-  idTokenCookieName: "vestibulum_id_token",
+  idTokenCookieName: ID_TOKEN_COOKIE_NAME,
   loginPath: "/login",
 };
-// __VESTIBULUM_CONFIG_END__
 
 /**
  * Module-scoped JWKS cache. Lambda@Edge warm-container reuse means this

@@ -23,6 +23,7 @@ import {
 } from "@aws-sdk/client-cognito-identity-provider";
 import { RuntimeEnv } from "../../shared/runtime-env.js";
 import { parseCookies, buildSetCookie } from "../auth-verify/cookie.js";
+import { ID_TOKEN_COOKIE_NAME, REFRESH_TOKEN_COOKIE_NAME } from "../../shared/cookie-names.js";
 
 // ---------------------------------------------------------------------------
 // Lambda Function URL event shapes.
@@ -61,7 +62,7 @@ function forbidden(): LambdaFunctionUrlResult {
 }
 
 function buildClearCookieHeaders(domain: string): string[] {
-  const idTokenClear = buildSetCookie("id-token", "", {
+  const idTokenClear = buildSetCookie(ID_TOKEN_COOKIE_NAME, "", {
     httpOnly: true,
     secure: true,
     sameSite: "Lax",
@@ -70,7 +71,7 @@ function buildClearCookieHeaders(domain: string): string[] {
     maxAge: 0,
   });
 
-  const refreshTokenClear = buildSetCookie("refresh-token", "", {
+  const refreshTokenClear = buildSetCookie(REFRESH_TOKEN_COOKIE_NAME, "", {
     httpOnly: true,
     secure: true,
     sameSite: "Strict",
@@ -160,7 +161,7 @@ export function createAuthSignoutHandler(deps: AuthSignoutHandlerDeps = {}) {
     // ------------------------------------------------------------------
     const cookieHeader = headers["cookie"];
     const cookies = parseCookies(cookieHeader);
-    const refreshToken = cookies["refresh-token"];
+    const refreshToken = cookies[REFRESH_TOKEN_COOKIE_NAME];
 
     // ------------------------------------------------------------------
     // 3. Server-side revocation — best-effort (proceed on failure).
@@ -169,7 +170,7 @@ export function createAuthSignoutHandler(deps: AuthSignoutHandlerDeps = {}) {
       const userPoolId = process.env[RuntimeEnv.COGNITO_USER_POOL_ID];
       if (userPoolId !== undefined && userPoolId !== "") {
         try {
-          const idTokenRaw = cookies["id-token"];
+          const idTokenRaw = cookies[ID_TOKEN_COOKIE_NAME];
           if (idTokenRaw !== undefined && idTokenRaw !== "") {
             const sub = extractSubFromJwt(idTokenRaw);
             if (sub !== undefined && sub !== "") {

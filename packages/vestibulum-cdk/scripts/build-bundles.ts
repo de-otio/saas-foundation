@@ -63,6 +63,9 @@ export const BUNDLE_ENTRIES: ReadonlyArray<{
   { name: "pre-token-generation", entry: "pre-token-generation.ts", edge: false },
   { name: "post-confirmation", entry: "post-confirmation.ts", edge: false },
   { name: "check-auth", entry: "check-auth.ts", edge: true },
+  // Regional custom-resource handler that bakes concrete Cognito config into
+  // the (Lambda@Edge) check-auth bundle at deploy time. Bundles `adm-zip`.
+  { name: "check-auth-config-baker", entry: "check-auth-config-baker.ts", edge: false },
   // v0.2 shared-distribution bundles
   { name: "admin", entry: "shared-distribution-admin.ts", edge: false },
   { name: "reconciler", entry: "shared-distribution-reconciler.ts", edge: false },

@@ -39,6 +39,10 @@ export const AUTH_SITE_BUNDLE_NAMES = [
   "auth-signout",
   "auth-login",
   "check-auth",
+  // The deploy-time config baker for the check-auth Lambda@Edge: a regional
+  // custom-resource handler that injects concrete Cognito config into the
+  // edge bundle's PLACEHOLDER_* seams and republishes the version.
+  "check-auth-config-baker",
 ] as const;
 
 export type AuthSiteBundleName = (typeof AUTH_SITE_BUNDLE_NAMES)[number];
