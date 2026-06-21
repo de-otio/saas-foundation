@@ -27,6 +27,7 @@ import {
 } from "@aws-sdk/client-cognito-identity-provider";
 import { RuntimeEnv } from "../../shared/runtime-env.js";
 import { buildSetCookie } from "./cookie.js";
+import { ID_TOKEN_COOKIE_NAME, REFRESH_TOKEN_COOKIE_NAME } from "../../shared/cookie-names.js";
 
 // ---------------------------------------------------------------------------
 // Lambda Function URL event shapes (minimal — only the fields we need).
@@ -202,7 +203,7 @@ export function createAuthVerifyHandler(deps: AuthVerifyHandlerDeps = {}) {
     // 4. Set cookies and return 200.
     // ------------------------------------------------------------------
 
-    const idTokenCookie = buildSetCookie("id-token", idToken, {
+    const idTokenCookie = buildSetCookie(ID_TOKEN_COOKIE_NAME, idToken, {
       httpOnly: true,
       secure: true,
       sameSite: "Lax",
@@ -214,7 +215,7 @@ export function createAuthVerifyHandler(deps: AuthVerifyHandlerDeps = {}) {
     const setCookieHeaders: string[] = [idTokenCookie];
 
     if (refreshToken !== undefined && refreshToken !== "") {
-      const refreshTokenCookie = buildSetCookie("refresh-token", refreshToken, {
+      const refreshTokenCookie = buildSetCookie(REFRESH_TOKEN_COOKIE_NAME, refreshToken, {
         httpOnly: true,
         secure: true,
         sameSite: "Strict",
