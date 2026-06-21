@@ -533,7 +533,15 @@ export class MagicLinkAuthSite extends Construct {
     checkAuthBaker.addToRolePolicy(
       new iam.PolicyStatement({
         sid: "BakeCheckAuthConfig",
-        actions: ["lambda:UpdateFunctionCode", "lambda:PublishVersion"],
+        // GetFunction(+Configuration) are needed by the `waitUntilFunctionUpdated`
+        // poller after UpdateFunctionCode; PublishVersion mints the version the
+        // CloudFront association points at.
+        actions: [
+          "lambda:GetFunction",
+          "lambda:GetFunctionConfiguration",
+          "lambda:UpdateFunctionCode",
+          "lambda:PublishVersion",
+        ],
         resources: [checkAuthFn.lambda.functionArn, `${checkAuthFn.lambda.functionArn}:*`],
       }),
     );

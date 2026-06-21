@@ -1031,7 +1031,12 @@ describe("MagicLinkAuthSite", () => {
         PolicyDocument: Match.objectLike({
           Statement: Match.arrayWith([
             Match.objectLike({
-              Action: ["lambda:UpdateFunctionCode", "lambda:PublishVersion"],
+              Action: [
+                "lambda:GetFunction",
+                "lambda:GetFunctionConfiguration",
+                "lambda:UpdateFunctionCode",
+                "lambda:PublishVersion",
+              ],
             }),
           ]),
         }),
