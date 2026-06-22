@@ -14,6 +14,12 @@ on:
     # Weekly, Monday 03:27 UTC (off-peak, avoids the top-of-hour rush).
     - cron: "27 3 * * 1"
 
+# Cancel a PR's superseded CodeQL run on a new push; never cancel push/
+# schedule runs on main (each default-branch commit gets full analysis).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
@@ -21,6 +27,8 @@ jobs:
   analyze:
     name: Analyze TypeScript
     runs-on: ubuntu-latest
+    # Fail fast instead of inheriting the 6-hour default ceiling.
+    timeout-minutes: 15
     permissions:
       security-events: write # upload CodeQL results
       actions: read

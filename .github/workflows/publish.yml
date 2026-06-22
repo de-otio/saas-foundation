@@ -37,6 +37,12 @@ on:
       - "@de-otio/vestibulum@*"
       - "@de-otio/vestibulum-cdk@*"
 
+# Serialise publish runs but never cancel an in-flight publish — a half-run
+# npm publish must not be aborted by a newer tag.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
   id-token: write # OIDC for Trusted Publishing + provenance

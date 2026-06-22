@@ -28,6 +28,8 @@ jobs:
   build-and-test:
     name: Build, typecheck, test, lint
     runs-on: ubuntu-latest
+    # Fail fast instead of inheriting the 6-hour default ceiling.
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
