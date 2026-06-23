@@ -94,7 +94,7 @@ describe('wrapPreTokenHandler — required property tests', () => {
 
     const handler = wrapPreTokenHandler(async (event, _ctx) => {
       // Overwrite the pre-set value.
-      event.response.claimsOverrideDetails!.claimsToAddOrOverride!['custom:tenant_id'] =
+      event.response!.claimsOverrideDetails!.claimsToAddOrOverride!['custom:tenant_id'] =
         'attacker-value';
       return event;
     });
@@ -112,7 +112,7 @@ describe('wrapPreTokenHandler — required property tests', () => {
 
     const handler = wrapPreTokenHandler(async (event, _ctx) => {
       // Add the claim to suppressions — Cognito would strip it after overrides.
-      event.response.claimsOverrideDetails!.claimsToSuppress = ['custom:tenant_id'];
+      event.response!.claimsOverrideDetails!.claimsToSuppress = ['custom:tenant_id'];
       return event;
     });
 
@@ -143,7 +143,7 @@ describe('wrapPreTokenHandler — required property tests', () => {
 
     const handler = wrapPreTokenHandler(async (event, _ctx) => {
       // Inner touches claimsToSuppress but not claimsToAddOrOverride.
-      event.response.claimsOverrideDetails!.claimsToSuppress = ['some-other-claim'];
+      event.response!.claimsOverrideDetails!.claimsToSuppress = ['some-other-claim'];
       return event;
     });
 
@@ -206,7 +206,7 @@ describe('wrapPreTokenHandler — additional coverage', () => {
     ddbMock.on(GetItemCommand).resolves({ Item: makeConfigItem(clientId, tenantId) });
 
     const handler = wrapPreTokenHandler(async (event, _ctx) => {
-      event.response.claimsOverrideDetails!.claimsToAddOrOverride!['custom:role'] = 'admin';
+      event.response!.claimsOverrideDetails!.claimsToAddOrOverride!['custom:role'] = 'admin';
       return event;
     });
 
@@ -258,7 +258,7 @@ describe('wrapPreTokenHandler — additional coverage', () => {
     ddbMock.on(GetItemCommand).resolves({ Item: makeConfigItem(clientId, tenantId) });
 
     const handler = wrapPreTokenHandler(async (event, _ctx) => {
-      event.response.claimsOverrideDetails!.claimsToSuppress = ['email', 'phone_number'];
+      event.response!.claimsOverrideDetails!.claimsToSuppress = ['email', 'phone_number'];
       return event;
     });
 
@@ -276,7 +276,7 @@ describe('wrapPreTokenHandler — additional coverage', () => {
     ddbMock.on(GetItemCommand).resolves({ Item: makeConfigItem(clientId, tenantId) });
 
     const handler = wrapPreTokenHandler(async (event, _ctx) => {
-      delete event.response.claimsOverrideDetails!.claimsToAddOrOverride!['custom:tenant_id'];
+      delete event.response!.claimsOverrideDetails!.claimsToAddOrOverride!['custom:tenant_id'];
       return event;
     });
 

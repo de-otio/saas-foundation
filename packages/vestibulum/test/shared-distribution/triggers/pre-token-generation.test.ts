@@ -68,7 +68,7 @@ describe('shared-distribution pre-token-generation handler', () => {
     const event = makePreTokenEvent(clientId);
     const result = await handler(event);
     expect(
-      result.response.claimsOverrideDetails?.claimsToAddOrOverride?.['custom:tenant_id'],
+      result.response!.claimsOverrideDetails?.claimsToAddOrOverride?.['custom:tenant_id'],
     ).toBe('tenant-xyz');
   });
 
@@ -93,7 +93,7 @@ describe('shared-distribution pre-token-generation handler', () => {
     const result = await handler(event);
     expect(result).toBe(event);
     expect(
-      result.response.claimsOverrideDetails?.claimsToAddOrOverride?.['custom:tenant_id'],
+      result.response!.claimsOverrideDetails?.claimsToAddOrOverride?.['custom:tenant_id'],
     ).toBe('t-42');
   });
 });
@@ -114,7 +114,7 @@ describe('wrapPreTokenHandler — contract enforcement (smoke tests)', () => {
     const clientId = nextClientId();
     ddbMock.on(GetItemCommand).resolves({ Item: clientConfigItem(clientId, 'tenant-a') });
     const badHandler = wrapPreTokenHandler(async (event) => {
-      event.response.claimsOverrideDetails!.claimsToAddOrOverride!['custom:tenant_id'] = 'evil';
+      event.response!.claimsOverrideDetails!.claimsToAddOrOverride!['custom:tenant_id'] = 'evil';
       return event;
     });
     const event = makePreTokenEvent(clientId);
@@ -127,7 +127,7 @@ describe('wrapPreTokenHandler — contract enforcement (smoke tests)', () => {
     const clientId = nextClientId();
     ddbMock.on(GetItemCommand).resolves({ Item: clientConfigItem(clientId, 'tenant-a') });
     const badHandler = wrapPreTokenHandler(async (event) => {
-      event.response.claimsOverrideDetails!.claimsToSuppress = ['custom:tenant_id'];
+      event.response!.claimsOverrideDetails!.claimsToSuppress = ['custom:tenant_id'];
       return event;
     });
     const event = makePreTokenEvent(clientId);
@@ -140,19 +140,19 @@ describe('wrapPreTokenHandler — contract enforcement (smoke tests)', () => {
     const clientId = nextClientId();
     ddbMock.on(GetItemCommand).resolves({ Item: clientConfigItem(clientId, 'tenant-a') });
     const goodHandler = wrapPreTokenHandler(async (event) => {
-      event.response.claimsOverrideDetails!.claimsToAddOrOverride!['custom:role'] = 'admin';
+      event.response!.claimsOverrideDetails!.claimsToAddOrOverride!['custom:role'] = 'admin';
       return event;
     });
     const event = makePreTokenEvent(clientId);
     const result = await goodHandler(event);
-    expect(result.response.claimsOverrideDetails?.claimsToAddOrOverride?.['custom:tenant_id']).toBe('tenant-a');
-    expect(result.response.claimsOverrideDetails?.claimsToAddOrOverride?.['custom:role']).toBe('admin');
+    expect(result.response!.claimsOverrideDetails?.claimsToAddOrOverride?.['custom:tenant_id']).toBe('tenant-a');
+    expect(result.response!.claimsOverrideDetails?.claimsToAddOrOverride?.['custom:role']).toBe('admin');
   });
 
   it('propagates errors thrown by the inner handler', async () => {
     const clientId = nextClientId();
     ddbMock.on(GetItemCommand).resolves({ Item: clientConfigItem(clientId, 'tenant-a') });
-    const errorHandler = wrapPreTokenHandler(async () => {
+    const errorHandler = wrapPreTokenHandler<PreTokenEventLike>(async () => {
       throw new Error('inner error');
     });
     const event = makePreTokenEvent(clientId);

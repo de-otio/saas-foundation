@@ -19,6 +19,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { updateTenant, TenantNotFoundError } from '../../../../src/lambda/shared-distribution/admin/actions/update-tenant.js';
 import type { UpdateTenantDeps } from '../../../../src/lambda/shared-distribution/admin/actions/update-tenant.js';
 import type { CallerIdentity } from '../../../../src/lambda/shared-distribution/admin/audit-log.js';
+import { tenantId } from '@de-otio/saas-foundation/types/frozen';
 import { UpdateTenantRequestSchema } from '../../../../src/lambda/shared-distribution/admin/schemas.js';
 
 // ---------------------------------------------------------------------------
@@ -70,7 +71,7 @@ describe('updateTenant — happy path', () => {
     ddbMock.on(UpdateItemCommand).resolves({});
 
     const result = await updateTenant(
-      { action: 'updateTenant', tenantId: 'acme', allowedEmailDomains: ['new.example'] },
+      { action: 'updateTenant', tenantId: tenantId('acme'), allowedEmailDomains: ['new.example'] },
       makeDeps(),
       CALLER,
       'req-u-001',
@@ -92,7 +93,7 @@ describe('updateTenant — happy path', () => {
     const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
 
     await updateTenant(
-      { action: 'updateTenant', tenantId: 'acme', allowedEmailDomains: ['new.example'] },
+      { action: 'updateTenant', tenantId: tenantId('acme'), allowedEmailDomains: ['new.example'] },
       makeDeps(),
       CALLER,
       'req-u-002',
@@ -108,7 +109,7 @@ describe('updateTenant — happy path', () => {
     const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
 
     await updateTenant(
-      { action: 'updateTenant', tenantId: 'acme', allowedEmailDomains: [] },
+      { action: 'updateTenant', tenantId: tenantId('acme'), allowedEmailDomains: [] },
       makeDeps(),
       CALLER,
       'req-u-003',
@@ -129,7 +130,7 @@ describe('updateTenant — errors', () => {
 
     await expect(
       updateTenant(
-        { action: 'updateTenant', tenantId: 'ghost', allowedEmailDomains: [] },
+        { action: 'updateTenant', tenantId: tenantId('ghost'), allowedEmailDomains: [] },
         makeDeps(),
         CALLER,
         'req-u-004',

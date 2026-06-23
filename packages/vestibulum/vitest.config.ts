@@ -31,7 +31,9 @@ export default defineConfig({
       exclude: ["src/**/*.d.ts", "src/**/index.ts"],
     },
     pool: "threads",
-    poolOptions: { threads: { maxThreads: 4, minThreads: 2 } },
+    // vitest 4 removed `poolOptions`; the thread cap is now the top-level
+    // `maxWorkers` (there is no `minWorkers` equivalent).
+    maxWorkers: 4,
     isolate: true,
     sequence: { shuffle: true, seed: 1000 },
     testTimeout: 5000,

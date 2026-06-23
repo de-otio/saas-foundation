@@ -40,7 +40,10 @@ const RATE_TABLE = "magic-link-rate-limit";
 const EMAIL = "user@example.com";
 const FIXED_NOW_MS = 1_700_000_000_000;
 
-function makeEvent(overrides: Partial<LambdaFunctionUrlEvent> & {
+function makeEvent(overrides: Omit<Partial<LambdaFunctionUrlEvent>, "body"> & {
+  // `body` redeclared (not via Partial) so an explicit `body: undefined` is
+  // allowed under exactOptionalPropertyTypes — the "missing body" test case.
+  body?: string | null | undefined;
   origin?: string | undefined;
   xff?: string | undefined;
   bodyObj?: unknown;
@@ -60,7 +63,10 @@ function makeEvent(overrides: Partial<LambdaFunctionUrlEvent> & {
   } else {
     body = JSON.stringify({ email: EMAIL });
   }
-  return { headers, body };
+  // Spread body in only when defined (the "missing body" case omits it) — the
+  // event's `body` is readonly and exactOptionalPropertyTypes forbids assigning
+  // `undefined`.
+  return { headers, ...(body !== undefined ? { body } : {}) };
 }
 
 function makeDeps() {

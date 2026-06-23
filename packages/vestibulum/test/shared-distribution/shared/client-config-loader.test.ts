@@ -270,7 +270,7 @@ describe('loadClientConfigBySubdomain', () => {
     expect(result?.subdomain).toBe(subdomain);
 
     // Verify the QueryCommand was sent with the correct parameters.
-    const calls = ddbMock.calls(QueryCommand);
+    const calls = ddbMock.commandCalls(QueryCommand);
     expect(calls).toHaveLength(1);
     const input = calls[0]!.args[0].input as {
       IndexName?: string;
@@ -315,6 +315,6 @@ describe('loadClientConfigBySubdomain', () => {
 
     expect(r1?.subdomain).toBe(subdomain);
     expect(r2).toBe(r1);
-    expect(ddbMock.calls(QueryCommand)).toHaveLength(1);
+    expect(ddbMock.commandCalls(QueryCommand)).toHaveLength(1);
   });
 });

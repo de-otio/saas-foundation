@@ -35,6 +35,7 @@ import {
 } from '../../../../src/lambda/shared-distribution/admin/actions/create-tenant.js';
 import type { CreateTenantDeps } from '../../../../src/lambda/shared-distribution/admin/actions/create-tenant.js';
 import type { CallerIdentity } from '../../../../src/lambda/shared-distribution/admin/audit-log.js';
+import { tenantId, tenantSubdomain } from '@de-otio/saas-foundation/types/frozen';
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -63,8 +64,8 @@ function makeDeps(): CreateTenantDeps {
 
 const BASE_REQ = {
   action: 'createTenant' as const,
-  subdomain: 'acme',
-  tenantId: 'acme',
+  subdomain: tenantSubdomain('acme'),
+  tenantId: tenantId('acme'),
   allowedEmailDomains: ['acme.example'],
   idempotencyKey: 'test-key-01234567',
 };

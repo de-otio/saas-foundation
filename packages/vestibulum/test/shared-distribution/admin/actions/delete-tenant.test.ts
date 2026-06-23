@@ -24,6 +24,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { deleteTenant, TenantNotFoundError } from '../../../../src/lambda/shared-distribution/admin/actions/delete-tenant.js';
 import type { DeleteTenantDeps } from '../../../../src/lambda/shared-distribution/admin/actions/delete-tenant.js';
 import type { CallerIdentity } from '../../../../src/lambda/shared-distribution/admin/audit-log.js';
+import { tenantId } from '@de-otio/saas-foundation/types/frozen';
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -77,7 +78,7 @@ describe('deleteTenant — without revokeActiveSessions', () => {
     cognitoMock.on(DeleteUserPoolClientCommand).resolves({});
 
     await deleteTenant(
-      { action: 'deleteTenant', tenantId: 'acme' },
+      { action: 'deleteTenant', tenantId: tenantId('acme') },
       makeDeps(),
       CALLER,
       'req-d-001',
@@ -105,7 +106,7 @@ describe('deleteTenant — without revokeActiveSessions', () => {
     const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
 
     await deleteTenant(
-      { action: 'deleteTenant', tenantId: 'acme' },
+      { action: 'deleteTenant', tenantId: tenantId('acme') },
       makeDeps(),
       CALLER,
       'req-d-002',
@@ -122,7 +123,7 @@ describe('deleteTenant — without revokeActiveSessions', () => {
     const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
 
     await deleteTenant(
-      { action: 'deleteTenant', tenantId: 'acme', revokeActiveSessions: false },
+      { action: 'deleteTenant', tenantId: tenantId('acme'), revokeActiveSessions: false },
       makeDeps(),
       CALLER,
       'req-d-003',
@@ -153,7 +154,7 @@ describe('deleteTenant — with revokeActiveSessions: true', () => {
     cognitoMock.on(AdminUserGlobalSignOutCommand).resolves({});
 
     await deleteTenant(
-      { action: 'deleteTenant', tenantId: 'acme', revokeActiveSessions: true },
+      { action: 'deleteTenant', tenantId: tenantId('acme'), revokeActiveSessions: true },
       makeDeps(),
       CALLER,
       'req-d-004',
@@ -192,7 +193,7 @@ describe('deleteTenant — with revokeActiveSessions: true', () => {
     cognitoMock.on(AdminUserGlobalSignOutCommand).resolves({});
 
     await deleteTenant(
-      { action: 'deleteTenant', tenantId: 'acme', revokeActiveSessions: true },
+      { action: 'deleteTenant', tenantId: tenantId('acme'), revokeActiveSessions: true },
       makeDeps(),
       CALLER,
       'req-d-005',
@@ -210,7 +211,7 @@ describe('deleteTenant — with revokeActiveSessions: true', () => {
     const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
 
     await deleteTenant(
-      { action: 'deleteTenant', tenantId: 'acme', revokeActiveSessions: true },
+      { action: 'deleteTenant', tenantId: tenantId('acme'), revokeActiveSessions: true },
       makeDeps(),
       CALLER,
       'req-d-006',
@@ -231,7 +232,7 @@ describe('deleteTenant — errors', () => {
 
     await expect(
       deleteTenant(
-        { action: 'deleteTenant', tenantId: 'ghost' },
+        { action: 'deleteTenant', tenantId: tenantId('ghost') },
         makeDeps(),
         CALLER,
         'req-d-007',
