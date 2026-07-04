@@ -105,12 +105,6 @@ export interface OidcIdpRecord {
   attachedAppClientIds: string[];
   lastSyncedAt: Date;
   /**
-   * @deprecated Use {@link OidcIdpRecord.clientSecret} (a pinned
-   * `SecretRef`) instead. Echoed back from the input for legacy
-   * consumer bookkeeping. May be removed in a future minor.
-   */
-  clientSecretArn?: string;
-  /**
    * S-V2: pinned `SecretRef` for the OIDC client secret. Populated
    * by `upsert(...)`: the `versionId` field is the value Secrets
    * Manager actually served when the manager last pushed the
@@ -208,7 +202,6 @@ export class OidcIdpManager {
       status: "ACTIVE",
       attachedAppClientIds: [],
       lastSyncedAt: new Date(),
-      clientSecretArn: input.clientSecretArn,
       clientSecret: pinnedClientSecret,
     };
   }

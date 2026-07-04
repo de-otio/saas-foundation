@@ -15,8 +15,8 @@ import { createHash } from "crypto";
 import { DynamoDBClient, GetItemCommand } from "@aws-sdk/client-dynamodb";
 
 import { isDenylisted } from "../../../../src/lambda/handlers/create-auth-challenge/quarantine-check.js";
-// The bounce-handler re-exports the canonical hmacEmail it uses for the WRITE.
-import { hmacEmail as bounceWriteHmac } from "../../../../src/lambda/handlers/bounce-handler/index.js";
+// Both the bounce-handler WRITE and the quarantine-check READ funnel through
+// this one canonical hmacEmail (shared module), so keys cannot drift.
 import { hmacEmail as sharedHmac } from "../../../../src/lambda/shared/email-hmac.js";
 
 const ddbMock = mockClient(DynamoDBClient);
@@ -31,10 +31,6 @@ function denylistKeyOfLastGet(): string | undefined {
 describe("isDenylisted (denylist read)", () => {
   beforeEach(() => {
     ddbMock.reset();
-  });
-
-  it("reads the same single canonical hmacEmail the write uses", () => {
-    expect(bounceWriteHmac).toBe(sharedHmac);
   });
 
   it("queries with the KEYED HMAC, not a plain unkeyed sha256 (the bug)", async () => {
@@ -58,7 +54,7 @@ describe("isDenylisted (denylist read)", () => {
     await isDenylisted(client, "Denylist", "User@Example.COM", KEY);
 
     const queried = denylistKeyOfLastGet();
-    const written = bounceWriteHmac("user@example.com", KEY);
+    const written = sharedHmac("user@example.com", KEY);
     expect(queried).toBe(written);
   });
 

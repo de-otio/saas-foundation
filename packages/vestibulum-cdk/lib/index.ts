@@ -22,8 +22,8 @@ export {
 // CDK-nag rule pack
 export * from "./cdk-nag-rules/index.js";
 
-// WAF default rules
-export * from "./waf/index.js";
+// WAF default rules are exported from the edge-resources barrel below
+// (the authoritative home is lib/edge-resources/waf-defaults.ts).
 
 // App clients — export names not already provided by magic-link-identity
 export {

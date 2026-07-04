@@ -109,15 +109,11 @@ export type {
   ParseSamlMetadataOptions,
 } from "./discovery/saml-metadata.js";
 
-// ---- Pools (forward-compat namespace) -------------------------------------
-// Note: the canonical `PoolConfig` shape is exported above from
-// `verify/multi-pool-verifier.js` (the v0.x verifier surface). The
-// pools/ namespace exports an extended `PoolConfig` that adds an
-// optional `kind: PoolKind` annotation; consumers that need the
-// annotated shape import it under the `pools/` sub-path from
-// `./pools/pool-config.js`. The barrel here re-exports the
-// runtime helpers and `PoolKind` only, to avoid the type-name
-// collision with the verifier surface.
+// ---- Pools -----------------------------------------------------------------
+// `PoolConfig` has a single canonical definition in `pools/pool-config.ts`;
+// it is exported above (re-exported through the verifier surface at
+// `verify/multi-pool-verifier.js`). Here we export the remaining pool
+// vocabulary — `PoolKind` and the `PoolRegistry` helper.
 export type { PoolKind, PoolRegistry } from "./pools/index.js";
 export { createPoolRegistry } from "./pools/index.js";
 

@@ -29,12 +29,6 @@ import { DynamoDBClient, PutItemCommand } from "@aws-sdk/client-dynamodb";
 import { hmacEmail, resolveEmailHmacKeyFromEnv } from "../../shared/email-hmac.js";
 import { RuntimeEnv } from "../../shared/runtime-env.js";
 
-// Re-exported for backward compatibility; the canonical implementation (which
-// lowercases the address — the bounce-handler historically did not, so its
-// denylist writes never matched the lowercasing quarantine-check reads) now
-// lives in the shared module so write and read cannot drift.
-export { hmacEmail };
-
 /** SES notification type discriminant. */
 type SesNotificationType = "Bounce" | "Complaint" | "Delivery";
 

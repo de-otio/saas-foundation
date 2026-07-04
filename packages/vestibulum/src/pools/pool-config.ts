@@ -3,11 +3,10 @@
  * participating in the multi-pool topology described in
  * doc/vestibulum/06-pool-topology.md.
  *
- * This module is the forward-compat home of pool-shape vocabulary.
- * In v0.x, the JWT verifier (`verify/multi-pool-verifier.ts`) ships
- * its own structurally-compatible `PoolConfig` type — the shape
- * declared here is the canonical one and the verifier's local copy
- * re-exports it (with `kind` defaulting to `'B2C'` when not present).
+ * This module is the single canonical home of pool-shape vocabulary.
+ * The JWT verifier (`verify/multi-pool-verifier.ts`) imports and
+ * re-exports this `PoolConfig` rather than declaring its own, so
+ * the verifier surface and the `pools/` namespace share one shape.
  *
  * Why the indirection: at v0.x, no consumer wires a separate pool
  * registry. The verifier's existing surface is the only entry point
@@ -36,12 +35,11 @@ export type PoolKind = "B2C" | "B2B";
 /**
  * Configuration for one Cognito user pool.
  *
- * The shape matches the verifier-local `PoolConfig` in
- * `verify/multi-pool-verifier.ts`; future verifier rewrites will
- * import this type directly. The verifier's local type is retained
- * (re-exported) for backward compatibility — consumer code written
- * against `import type { PoolConfig } from '@de-otio/vestibulum'`
- * already resolves to the same structural shape.
+ * This is the one definition of the shape; the JWT verifier
+ * (`verify/multi-pool-verifier.ts`) imports it directly. Consumer
+ * code written against
+ * `import type { PoolConfig } from '@de-otio/vestibulum'` resolves
+ * to this type.
  */
 export interface PoolConfig {
   /**

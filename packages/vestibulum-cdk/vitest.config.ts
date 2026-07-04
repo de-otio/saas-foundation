@@ -17,7 +17,6 @@ export default defineConfig({
       include: [
         "lib/aspects/**/*.ts",
         "lib/cdk-nag-rules/**/*.ts",
-        "lib/waf/**/*.ts",
         "lib/custom-attributes/**/*.ts",
         "lib/hosted-ui-domain/**/*.ts",
         "lib/app-clients/**/*.ts",

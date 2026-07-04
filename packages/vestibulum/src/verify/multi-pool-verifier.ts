@@ -47,45 +47,12 @@ import {
 } from "aws-jwt-verify/error";
 
 import { MultiPoolVerifierError } from "../errors.js";
+import type { PoolConfig } from "../pools/pool-config.js";
 
-/**
- * Configuration for one Cognito user pool participating in the
- * multi-pool verifier.
- */
-export interface PoolConfig {
-  /**
-   * Stable identifier the consumer assigns (e.g. `'b2c'` or
-   * `'b2b'`). Returned in the verified-token output so handlers
-   * can branch on it. NOT the Cognito pool ID.
-   */
-  readonly poolKey: string;
-
-  /** Cognito User Pool ID (e.g. `us-east-1_abcdef`). */
-  readonly userPoolId: string;
-
-  /**
-   * The app client ID(s) that may legitimately issue tokens from
-   * this pool. Matched against the JWT's `client_id` (access
-   * tokens) or `aud` (ID tokens) claim.
-   */
-  readonly clientId: string | string[];
-
-  /** AWS region the user pool lives in. */
-  readonly region: string;
-
-  /**
-   * Required `token_use` claim value.
-   *
-   * - `'access'` — only access tokens accepted.
-   * - `'id'`     — only ID tokens accepted.
-   * - `null`     — both accepted (unsafe; avoid unless you know why).
-   *
-   * S-V6: the safer default is `'access'` or `'id'`; `null` is
-   * documented here as the unsafe permissive value. Callers should
-   * always pin to the specific token type their operation requires.
-   */
-  readonly tokenUse: "access" | "id" | null;
-}
+// `PoolConfig` is the single canonical pool-shape vocabulary defined in
+// `pools/pool-config.ts`. It is re-exported here so the verifier surface
+// (`@de-otio/vestibulum` barrel) keeps exposing it from this module.
+export type { PoolConfig };
 
 /** The shape returned by {@link MultiPoolVerifier.verify}. */
 export interface VerifiedToken {
@@ -187,9 +154,13 @@ export function createMultiPoolVerifier(pools: ReadonlyArray<PoolConfig>): Multi
     if (entries.has(issuer)) {
       throw new Error(`createMultiPoolVerifier: duplicate pool for issuer ${issuer}`);
     }
+    // `clientId` on the canonical PoolConfig is `string | ReadonlyArray<string>`;
+    // aws-jwt-verify wants a mutable `string | string[]`, so copy the array.
+    const clientId: string | string[] =
+      typeof pool.clientId === "string" ? pool.clientId : [...pool.clientId];
     const verifier = CognitoJwtVerifier.create({
       userPoolId: pool.userPoolId,
-      clientId: pool.clientId,
+      clientId,
       tokenUse: pool.tokenUse,
     });
     entries.set(issuer, {
