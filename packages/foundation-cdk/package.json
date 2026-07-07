@@ -1,6 +1,6 @@
 {
   "name": "@de-otio/saas-foundation-cdk",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "type": "module",
   "description": "AWS CDK constructs for de-otio SaaS deployment plumbing",
   "license": "Apache-2.0",
@@ -30,6 +30,10 @@
     "./table": {
       "import": "./dist/single-table/index.js",
       "types": "./dist/single-table/index.d.ts"
+    },
+    "./ses": {
+      "import": "./dist/ses-email-identity/index.js",
+      "types": "./dist/ses-email-identity/index.d.ts"
     },
     "./dashboards": {
       "import": "./dist/dashboards/index.js",

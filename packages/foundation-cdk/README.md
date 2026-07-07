@@ -20,7 +20,9 @@ npm install @de-otio/saas-foundation-cdk aws-cdk-lib constructs
 
 Requires Node ≥ 24 and `aws-cdk-lib@^2.200`.
 
-## Example
+## Constructs
+
+### NodejsLambda
 
 ```ts
 import { NodejsLambda } from "@de-otio/saas-foundation-cdk";
@@ -31,6 +33,39 @@ new NodejsLambda(this, "Worker", {
   alarmOnIteratorAge: { thresholdMinutes: 5 },
 });
 ```
+
+A Lambda function with house defaults (ARM64, X-Ray tracing, 30-day log retention, optional Prisma client bundling, and optional alarms for errors/throttles). See [`doc/foundation-cdk/02-nodejs-lambda.md`](https://github.com/de-otio/saas-foundation/tree/main/doc/foundation-cdk/02-nodejs-lambda.md).
+
+### SesEmailIdentity
+
+```ts
+import { SesEmailIdentity } from "@de-otio/saas-foundation-cdk";
+
+const identity = new SesEmailIdentity(this, "EmailIdentity", {
+  domainName: "mail.example.com",
+  hostedZone: zone,
+  dmarc: { policy: "quarantine", rua: "dmarc@example.com" },
+});
+
+// Grant a Lambda permission to send through this identity
+identity.grantSend(myLambda, ["noreply@example.com"]);
+```
+
+Provisions a domain identity for transactional email with Easy DKIM, custom MAIL FROM (SPF-aligned), DMARC record, TLS-required configuration set, and SNS topic for bounce/complaint events. When a Route53 hosted zone is provided, all DNS records are created automatically; otherwise they are emitted as CloudFormation outputs for manual entry.
+
+**Properties:**
+- `identity`: The verified `ses.EmailIdentity` (Easy DKIM enabled)
+- `configurationSet`: The TLS-required configuration set
+- `bounceComplaintTopic`: SNS topic receiving bounce and complaint events
+- `domainName`: The verified domain (e.g. `mail.example.com`)
+- `mailFromDomain`: The custom MAIL FROM domain (e.g. `mail.mail.example.com`)
+
+**Method:**
+- `grantSend(grantee, fromAddresses?)`: Grants `ses:SendEmail` and `ses:SendRawEmail` permission scoped to this identity, optionally restricted to specific `fromAddresses`.
+
+See [`doc/foundation-cdk/07-ses-email-identity.md`](https://github.com/de-otio/saas-foundation/tree/main/doc/foundation-cdk/07-ses-email-identity.md) for detailed configuration options and DMARC policy guidance.
+
+## Additional resources
 
 Aspects (`HouseDefaultsAspect`) and the dashboard helpers
 (`houseDashboard`, `listHouseDashboards`) are exported from the same
