@@ -1,5 +1,11 @@
 # @de-otio/saas-foundation-cdk
 
+## 0.4.0
+
+### Minor Changes
+
+- Add SesEmailIdentity construct for best-practice transactional email setup: domain identity with Easy DKIM, custom MAIL FROM subdomain (SPF-aligned), DMARC record, TLS-required configuration set, and SNS bounce/complaint topic. Supports both automatic Route53 record creation and manual DNS entry via CloudFormation outputs.
+
 ## 0.3.1
 
 ### Patch Changes

@@ -13,6 +13,9 @@ export type { QueueWithDlqProps } from "./queue-with-dlq/index.js";
 export { SingleTable } from "./single-table/index.js";
 export type { SingleTableProps } from "./single-table/index.js";
 
+export { SesEmailIdentity } from "./ses-email-identity/index.js";
+export type { SesEmailIdentityProps, SesDmarcOptions } from "./ses-email-identity/index.js";
+
 // Dashboards (substitution helper + house templates by name)
 export { houseDashboard, listHouseDashboards, readHouseTemplate } from "./dashboards/index.js";
 export type { HouseDashboardName, HouseDashboardParams } from "./dashboards/index.js";
