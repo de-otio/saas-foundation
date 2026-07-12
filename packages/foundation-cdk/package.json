@@ -55,12 +55,12 @@
     "lint": "eslint lib test"
   },
   "peerDependencies": {
-    "aws-cdk-lib": "^2.260.0",
+    "aws-cdk-lib": "^2.261.0",
     "constructs": "^10.0.0"
   },
   "devDependencies": {
     "@types/node": "^25.0.0",
-    "aws-cdk-lib": "^2.260.0",
+    "aws-cdk-lib": "^2.261.0",
     "constructs": "^10.0.0",
     "cdk-nag": "^2.0.0"
   },
