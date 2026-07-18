@@ -76,8 +76,9 @@ export {
   IdpManagerError,
   ReservedClaimError,
   MultiPoolVerifierError,
+  IssuerVerifierError,
 } from "./errors.js";
-export type { MultiPoolVerifierReason } from "./errors.js";
+export type { MultiPoolVerifierReason, IssuerVerifierReason } from "./errors.js";
 
 // ---- Multi-pool JWT verifier -----------------------------------------------
 export {
@@ -86,6 +87,15 @@ export {
   canonicalIssuer,
 } from "./verify/multi-pool-verifier.js";
 export type { PoolConfig, VerifiedToken, MultiPoolVerifier } from "./verify/multi-pool-verifier.js";
+
+// ---- Generic single-issuer OIDC verifier -----------------------------------
+export { createIssuerVerifier } from "./verify/issuer-verifier.js";
+export type {
+  IssuerVerifierConfig,
+  IssuerVerifiedToken,
+  IssuerVerifier,
+} from "./verify/issuer-verifier.js";
+export { PERMITTED_ALGS } from "./verify/permitted-algs.js";
 
 // ---- IdP managers ----------------------------------------------------------
 export { OidcIdpManager } from "./idp/oidc-manager.js";
