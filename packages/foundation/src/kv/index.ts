@@ -27,6 +27,9 @@ export type {
 } from "./store-types.js";
 export { KV_NAMESPACES, KV_FIELD_PATTERN } from "./store-types.js";
 
+export { MemoryKvStore } from "./memory-kv-store.js";
+export type { MemoryKvStoreOptions } from "./memory-kv-store.js";
+
 export { KvNotFoundError, KvTransientError, KvCursorError } from "./errors.js";
 
 export { createDefaultDynamoClient } from "./clients.js";
