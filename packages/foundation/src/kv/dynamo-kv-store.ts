@@ -51,6 +51,16 @@ export interface DynamoKvLayout {
   /** pk value = `${pkPrefix}${pkSeparator}${key}`. `key` MUST NOT contain the separator (F4). */
   readonly pkPrefix: string;
   readonly pkSeparator: ":" | "#";
+  /**
+   * Opt out of the F4 separator guard for namespaces whose keys are
+   * SERVER-CONSTRUCTED composite segments that legitimately contain the
+   * separator (`costtrack`/`costbudget`/`discexposure`, whose byte-compat pk is
+   * `prefix:{date}:{service}` etc — ws1-kv-port-plan §3.1/§3.3). Leave `false`
+   * (the default) for any namespace whose key is user/attacker-influenced
+   * (idempotency keys, device codes, JTIs) so a crafted separator cannot shift
+   * the composed pk. Never enable for a user-controlled-key namespace.
+   */
+  readonly allowSeparatorInKey?: boolean;
   /** Sort-key attribute name (usually `"sk"`); omit for pk-only tables (idempotency). */
   readonly skName?: string;
   /** Sort-key constant value (`"v"` | `"meta"` | `"rec"` | `"lock"` | `"idx"`). */
@@ -112,8 +122,9 @@ export class DynamoKvStore implements KvStore {
   }
 
   private buildPk(key: string): string {
-    if (key.includes(this.layout.pkSeparator)) {
-      // F4: an embedded separator could collide across namespaces.
+    if (this.layout.allowSeparatorInKey !== true && key.includes(this.layout.pkSeparator)) {
+      // F4: an embedded separator could collide across namespaces. Opt-out only
+      // for server-constructed composite-key namespaces (see DynamoKvLayout).
       throw new TypeError(`key contains the reserved pk separator (op=buildPk)`);
     }
     return `${this.layout.pkPrefix}${this.layout.pkSeparator}${key}`;
