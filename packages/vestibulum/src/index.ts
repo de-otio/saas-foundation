@@ -109,6 +109,7 @@ export type { IdpSecretsClientProps, StoredSecret } from "./secrets/secrets-clie
 
 // ---- Discovery -------------------------------------------------------------
 export { probeOidcIssuer } from "./discovery/oidc-probe.js";
+export { isPrivateAddress, isPrivateIPv4, isPrivateIPv6 } from "./discovery/private-ip.js";
 export { parseSamlMetadata } from "./discovery/saml-metadata.js";
 export type {
   SamlMetadata,
