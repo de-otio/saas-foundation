@@ -119,6 +119,24 @@ export function runKvStoreContract(adapter: AdapterUnderTest): void {
       clock.advanceSeconds(31);
       expect(await store.get("k")).toBeNull();
     });
+
+    it("includeExpired returns an expired-but-uncleaned record (TTL-ignoring read)", async () => {
+      const clock = makeClock();
+      const store = await adapter.make(clock.now);
+      await store.put("k", { v: 7 }, { ttlSeconds: 100 });
+      clock.advanceSeconds(101);
+      // Default read filters the expired row...
+      expect(await store.get("k")).toBeNull();
+      // ...but includeExpired still yields the last-known value (getActiveTenantPreference).
+      const got = await store.get<{ v: number }>("k", { includeExpired: true });
+      expect(got?.value).toEqual({ v: 7 });
+    });
+
+    it("includeExpired still returns null when the key never existed", async () => {
+      const clock = makeClock();
+      const store = await adapter.make(clock.now);
+      expect(await store.get("missing", { includeExpired: true })).toBeNull();
+    });
   });
 
   describe(`${adapter.name} — putIfAbsent`, () => {

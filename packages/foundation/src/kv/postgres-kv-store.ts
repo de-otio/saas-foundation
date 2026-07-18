@@ -121,15 +121,23 @@ export class PostgresKvStore implements KvStore {
   // get — TTL-expiry-aware point read
   // -------------------------------------------------------------------------
 
-  async get<T>(key: string, _opts?: { readonly consistent?: boolean }): Promise<KvRecord<T> | null> {
+  async get<T>(
+    key: string,
+    opts?: { readonly consistent?: boolean; readonly includeExpired?: boolean },
+  ): Promise<KvRecord<T> | null> {
     // Postgres is strongly consistent on a single primary; `consistent` is a
-    // no-op (the read always reflects the latest committed write).
+    // no-op (the read always reflects the latest committed write). With
+    // `includeExpired`, drop the expiry predicate so an expired-but-unswept row
+    // is returned (survives until the cleanup cron / next overwrite) — the
+    // TTL-ignoring read for getActiveTenantPreference.
+    const expiryClause = opts?.includeExpired === true ? "" : " AND (expires_at IS NULL OR expires_at > $3)";
+    const params: unknown[] =
+      opts?.includeExpired === true ? [this.namespace, key] : [this.namespace, key, this.nowDate()];
     const { rows } = await this.executor.query<KvRow>(
       `SELECT value, version, extract(epoch from expires_at) AS exp
          FROM kv_entries
-        WHERE namespace = $1 AND key = $2
-          AND (expires_at IS NULL OR expires_at > $3)`,
-      [this.namespace, key, this.nowDate()],
+        WHERE namespace = $1 AND key = $2${expiryClause}`,
+      params,
     );
     const row = rows[0];
     return row === undefined ? null : this.rowToRecord<T>(row);

@@ -91,9 +91,15 @@ export class MemoryKvStore implements KvStore {
   // get
   // -------------------------------------------------------------------------
 
-  get<T>(key: string, _opts?: { readonly consistent?: boolean }): Promise<KvRecord<T> | null> {
+  get<T>(
+    key: string,
+    opts?: { readonly consistent?: boolean; readonly includeExpired?: boolean },
+  ): Promise<KvRecord<T> | null> {
     const entry = this.store.get(key);
-    if (entry === undefined || this.isExpired(entry)) return Promise.resolve(null);
+    if (entry === undefined) return Promise.resolve(null);
+    // `includeExpired` returns an expired-but-uncleaned row (survives until the
+    // next overwrite here) — the TTL-ignoring read for getActiveTenantPreference.
+    if (opts?.includeExpired !== true && this.isExpired(entry)) return Promise.resolve(null);
     return Promise.resolve(this.toRecord<T>(entry));
   }
 

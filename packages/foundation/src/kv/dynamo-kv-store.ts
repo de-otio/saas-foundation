@@ -231,10 +231,14 @@ export class DynamoKvStore implements KvStore {
 
   async get<T>(
     key: string,
-    opts?: { readonly consistent?: boolean },
+    opts?: { readonly consistent?: boolean; readonly includeExpired?: boolean },
   ): Promise<KvRecord<T> | null> {
     const item = await this.getRawItem(key, opts?.consistent === true);
-    if (item === null || this.isExpiredItem(item)) return null;
+    if (item === null) return null;
+    // `includeExpired` skips the client-side TTL filter, so an expired-but-unswept
+    // item is returned until DynamoDB's own TTL sweep deletes it — byte-identical
+    // to the pre-port getActiveTenantPreference read (~48h survival window).
+    if (opts?.includeExpired !== true && this.isExpiredItem(item)) return null;
     return this.toRecord<T>(item);
   }
 

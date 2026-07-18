@@ -124,7 +124,26 @@ export type KvNamespaceName = (typeof KV_NAMESPACES)[number];
  * device codes, JTIs, and user-code hashes are secrets.
  */
 export interface KvStore {
-  get<T>(key: string, opts?: { readonly consistent?: boolean }): Promise<KvRecord<T> | null>;
+  /**
+   * Point read, TTL-expiry-aware.
+   *
+   * @param opts.consistent - strongly-consistent read (F6; a MUST on the
+   *   refresh-detection JTI-consume path). No-op on the strongly-consistent
+   *   Postgres/Memory adapters.
+   * @param opts.includeExpired - when `true`, return an expired-but-uncleaned
+   *   record instead of `null`. ADDITIVE to the frozen interface (default `false`
+   *   preserves every existing caller and the claims-cache freshness/privilege
+   *   guarantee). Reproduces the pre-port `getActiveTenantPreference` "return the
+   *   last-known value even past TTL" read: DynamoKvStore skips its client-side
+   *   TTL filter (reads until the DDB physical sweep — byte-identical to today);
+   *   Postgres/Memory drop the `expires_at > now` clause (survives until the
+   *   cleanup cron / next overwrite). An accepted adapter difference in the
+   *   survival window, NOT an AWS behavior change.
+   */
+  get<T>(
+    key: string,
+    opts?: { readonly consistent?: boolean; readonly includeExpired?: boolean },
+  ): Promise<KvRecord<T> | null>;
 
   /** Unconditional overwrite. Returns the written record (version bumped). */
   put<T>(key: string, value: T, opts?: KvWriteOptions): Promise<KvRecord<T>>;
