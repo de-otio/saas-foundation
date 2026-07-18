@@ -5,6 +5,7 @@
  * - `DynamoKv` — Cloudflare KVNamespace interface over a DynamoDB table.
  * - `KVNamespace` — the Cloudflare-compat interface type.
  * - `MemoryKv` — in-memory shim for tests (@beta-test-only).
+ * - `KvStore` — the typed atomic-primitive store (sibling port) + its adapters.
  * - Error types: `KvNotFoundError`, `KvTransientError`, `KvCursorError`.
  * - Client factory: `createDefaultDynamoClient`.
  */
@@ -15,6 +16,16 @@ export type { KvNamespaceOptions } from "./dynamo-kv.js";
 export type { KVNamespace, KvPutOptions, KvListOptions, KvListResult } from "./cloudflare-types.js";
 
 export { MemoryKv } from "./memory.js";
+
+// KvStore — the typed atomic-primitive store (WS-1 T1 frozen interface).
+export type {
+  KvStore,
+  KvRecord,
+  KvWriteOptions,
+  KvCasResult,
+  KvNamespaceName,
+} from "./store-types.js";
+export { KV_NAMESPACES, KV_FIELD_PATTERN } from "./store-types.js";
 
 export { KvNotFoundError, KvTransientError, KvCursorError } from "./errors.js";
 
