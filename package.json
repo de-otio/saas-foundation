@@ -16,14 +16,14 @@
     "release": "changeset publish"
   },
   "devDependencies": {
-    "@changesets/cli": "^2.27.0",
+    "@changesets/cli": "^2.31.1",
     "@types/node": "^25.0.0",
-    "@typescript-eslint/eslint-plugin": "^8.61.1",
+    "@typescript-eslint/eslint-plugin": "^8.64.0",
     "@typescript-eslint/parser": "^8.61.0",
     "eslint": "^8.57.0",
-    "prettier": "^3.3.0",
+    "prettier": "^3.9.5",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.9",
+    "vitest": "^4.1.10",
     "@vitest/coverage-v8": "^4.0.0"
   },
   "overrides": {
