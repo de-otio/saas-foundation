@@ -27,6 +27,10 @@
       "import": "./dist/kv/postgres.js",
       "types": "./dist/kv/postgres.d.ts"
     },
+    "./identity": {
+      "import": "./dist/identity/index.js",
+      "types": "./dist/identity/index.d.ts"
+    },
     "./queue": {
       "import": "./dist/queue/index.js",
       "types": "./dist/queue/index.d.ts"
