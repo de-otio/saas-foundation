@@ -71,6 +71,33 @@ interface MagicLinkResponse {
 /** Refresh the cached service token this many ms before its actual expiry. */
 const TOKEN_EXPIRY_SLACK_MS = 30_000;
 
+/**
+ * [F3] Privilege-bearing user attributes that the application reads from the
+ * verified token and trusts for authorization. The IdP MUST configure each of
+ * these admin-edit-only in its User Profile config — if a user can edit them
+ * through the account API they can self-assign roles / switch active tenant.
+ * `verifyProfileLockdown()` asserts this at startup.
+ */
+export const PRIVILEGE_BEARING_ATTRIBUTES: ReadonlyArray<string> = [
+  "custom:globalRole",
+  "custom:tenantRole",
+  "custom:activeTenantId",
+];
+
+/**
+ * A single attribute entry in the Keycloak User Profile config
+ * (`GET /admin/realms/{realm}/users/profile`). Only the fields this check
+ * needs are modeled; the real payload carries more.
+ */
+interface UserProfileAttribute {
+  name?: string;
+  permissions?: {
+    /** Roles allowed to EDIT the attribute. Admin-only ⇒ `["admin"]`. */
+    edit?: string[];
+    view?: string[];
+  };
+}
+
 const REQUIRED_CONFIG: ReadonlyArray<
   keyof Pick<
     KeycloakIdentityProviderConfig,
@@ -249,6 +276,67 @@ export class KeycloakIdentityProvider implements IdentityProviderPort {
           res.status,
         );
       }
+    }
+  }
+
+  // ── startup health-check: privilege-attribute lockdown (F3) ───────────────
+
+  /**
+   * [F3] Verify — against the live Keycloak User Profile config — that every
+   * privilege-bearing `custom:*` attribute the application trusts for
+   * authorization ({@link PRIVILEGE_BEARING_ATTRIBUTES}) is configured
+   * **admin-edit-only** (its `permissions.edit` allows no role other than
+   * `admin`). If any is user-editable, throws — the caller wires this into
+   * boot so the process FAILS to start rather than serve while a user could
+   * self-assign roles or switch tenant by editing their own profile.
+   *
+   * Uses the same service (`manage-users`) token the adapter already holds.
+   *
+   * Rules:
+   *  - An attribute ABSENT from the profile config is NOT a failure: it is not
+   *    a user-editable managed attribute (it cannot be set through the account
+   *    API), so absence is the safe case.
+   *  - An attribute PRESENT with an `edit` permission listing any role other
+   *    than `admin` (e.g. `user`) IS a failure.
+   *  - An attribute present with no explicit `permissions.edit` is treated as
+   *    NOT locked down (fail-closed) — Keycloak's default when edit is
+   *    unspecified is user-editable.
+   *
+   * @throws IdentityProviderError `config_missing` when one or more attributes
+   *   are user-editable; `unauthorized`/`provider_error` on the admin call.
+   */
+  async verifyProfileLockdown(): Promise<void> {
+    const res = await this.authed(`/admin/realms/${this.cfg.realm}/users/profile`);
+    if (!res.ok) {
+      throw new IdentityProviderError(
+        res.status === 401 || res.status === 403 ? "unauthorized" : "provider_error",
+        `Keycloak user-profile config fetch failed (${res.status})`,
+        res.status,
+      );
+    }
+    const body = (await res.json()) as { attributes?: UserProfileAttribute[] };
+    const attributes = Array.isArray(body.attributes) ? body.attributes : [];
+
+    const userEditable: string[] = [];
+    for (const name of PRIVILEGE_BEARING_ATTRIBUTES) {
+      const attr = attributes.find((a) => a.name === name);
+      if (attr === undefined) continue; // absent ⇒ not a managed editable attr
+      const edit = attr.permissions?.edit;
+      // No explicit edit permission, or any role other than "admin" present,
+      // means a non-admin can edit it — a lockdown failure.
+      const adminOnly = Array.isArray(edit) && edit.length > 0 && edit.every((r) => r === "admin");
+      if (!adminOnly) userEditable.push(name);
+    }
+
+    if (userEditable.length > 0) {
+      throw new IdentityProviderError(
+        "config_missing",
+        `Keycloak user-profile lockdown FAILED: privilege-bearing attribute(s) ` +
+          `[${userEditable.join(", ")}] are not admin-edit-only. A non-admin user could ` +
+          `self-assign these (role / active-tenant escalation). Configure each attribute's ` +
+          `edit permission to "admin" only in the realm User Profile config, or set ` +
+          `KC_SKIP_PROFILE_LOCKDOWN_CHECK=true to bypass (NEVER in production).`,
+      );
     }
   }
 

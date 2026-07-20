@@ -34,6 +34,13 @@ interface FakeKeycloakState {
   tokenExpiresIn: number;
   /** When set, the magic-link endpoint returns this HTTP status. */
   magicLinkStatus?: number;
+  /** [F3] User Profile config `attributes` returned by GET .../users/profile. */
+  profileAttributes?: Array<{
+    name?: string;
+    permissions?: { edit?: string[]; view?: string[] };
+  }>;
+  /** [F3] When set, the users/profile endpoint returns this HTTP status. */
+  profileStatus?: number;
   requests: RecordedRequest[];
 }
 
@@ -103,6 +110,14 @@ function makeFake(state: FakeKeycloakState): typeof fetch {
       const email = decodeURIComponent(url.slice(lookupPrefix.length).replace(/&exact=true$/, ""));
       const found = [...state.users.values()].filter((u) => u.email === email);
       return json(200, found);
+    }
+
+    // [F3] admin: User Profile config (checked BEFORE the /users/{id} regex,
+    // which would otherwise treat "profile" as a user id).
+    if (url === `${BASE}/admin/realms/${REALM}/users/profile` && method === "GET") {
+      if (!authed) return json(401, {});
+      if (state.profileStatus !== undefined) return json(state.profileStatus, { error: "forced" });
+      return json(200, { attributes: state.profileAttributes ?? [] });
     }
 
     // admin: get / delete by id
@@ -365,6 +380,66 @@ describe("KeycloakIdentityProvider", () => {
       const result = await provider.createUser({ id: "u-9", email: "user1@example.test" });
       expect(result).toBe("conflict");
       expect(state.users.has("u-9")).toBe(false);
+    });
+  });
+
+  describe("verifyProfileLockdown (F3 — privilege-attribute lockdown health-check)", () => {
+    it("passes when every privilege attribute is admin-edit-only", async () => {
+      const state = freshState();
+      state.profileAttributes = [
+        { name: "username", permissions: { edit: ["admin", "user"] } }, // non-privilege, ignored
+        { name: "custom:globalRole", permissions: { edit: ["admin"] } },
+        { name: "custom:tenantRole", permissions: { edit: ["admin"] } },
+        { name: "custom:activeTenantId", permissions: { edit: ["admin"] } },
+      ];
+      const provider = makeProvider(state);
+      await expect(provider.verifyProfileLockdown()).resolves.toBeUndefined();
+    });
+
+    it("passes when the privilege attributes are absent from the profile config", async () => {
+      const state = freshState();
+      state.profileAttributes = [{ name: "username", permissions: { edit: ["admin", "user"] } }];
+      const provider = makeProvider(state);
+      // Absent ⇒ not a user-editable managed attribute ⇒ safe.
+      await expect(provider.verifyProfileLockdown()).resolves.toBeUndefined();
+    });
+
+    it("FAILS when a privilege attribute is user-editable", async () => {
+      const state = freshState();
+      state.profileAttributes = [
+        { name: "custom:globalRole", permissions: { edit: ["admin", "user"] } },
+        { name: "custom:tenantRole", permissions: { edit: ["admin"] } },
+        { name: "custom:activeTenantId", permissions: { edit: ["admin"] } },
+      ];
+      const provider = makeProvider(state);
+      let caught: unknown;
+      try {
+        await provider.verifyProfileLockdown();
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(IdentityProviderError);
+      expect((caught as IdentityProviderError).reason).toBe("config_missing");
+      expect((caught as Error).message).toContain("custom:globalRole");
+      expect((caught as Error).message).not.toContain("custom:tenantRole"); // that one is locked
+    });
+
+    it("FAILS (fail-closed) when a privilege attribute has no explicit edit permission", async () => {
+      const state = freshState();
+      state.profileAttributes = [{ name: "custom:globalRole", permissions: {} }];
+      const provider = makeProvider(state);
+      await expect(provider.verifyProfileLockdown()).rejects.toMatchObject({
+        reason: "config_missing",
+      });
+    });
+
+    it("maps a 403 on the profile call to unauthorized", async () => {
+      const state = freshState();
+      state.profileStatus = 403;
+      const provider = makeProvider(state);
+      await expect(provider.verifyProfileLockdown()).rejects.toMatchObject({
+        reason: "unauthorized",
+      });
     });
   });
 
