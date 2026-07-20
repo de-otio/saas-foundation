@@ -43,6 +43,19 @@ export {
   type MemoryParameterSeed,
 } from "./memory-secret-store.js";
 
+// Scaleway Secret Manager backend (WS-5) + env-driven provider selection
+export {
+  resolveScalewaySecret,
+  scalewaySecretRef,
+  resolveSecretsProvider,
+  ScalewaySecretRefValidationError,
+  _resetScalewayDefaultCacheForTests,
+  type ScalewaySecretRef,
+  type ScalewayResolveContext,
+  type ResolveScalewaySecretOptions,
+  type SecretsProvider,
+} from "./scaleway.js";
+
 // Errors
 export {
   SecretsResolveError,
