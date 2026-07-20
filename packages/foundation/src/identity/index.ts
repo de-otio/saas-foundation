@@ -15,3 +15,8 @@ export type {
 } from "./port-types.js";
 
 export { IdentityProviderError, type IdentityProviderErrorReason } from "./errors.js";
+
+export {
+  KeycloakIdentityProvider,
+  type KeycloakIdentityProviderConfig,
+} from "./keycloak-identity-provider.js";
