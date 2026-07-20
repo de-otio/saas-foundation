@@ -256,6 +256,42 @@ describe("KeycloakIdentityProvider", () => {
     });
   });
 
+  describe("service-token error handling (F5 — secret must not leak)", () => {
+    it("wraps a raw fetch rejection in a clean, secret-free provider_error", async () => {
+      const secret = "svc-secret-super-sensitive";
+      // A fetch impl whose rejection ECHOES the request body (which carries the
+      // client_secret) — the exact leak F5 guards against.
+      const leakyFetch = (async (_input: string | URL, init?: RequestInit) => {
+        throw new Error(
+          `ECONNREFUSED — request body was ${String(init?.body)} (client_secret=${secret})`,
+        );
+      }) as unknown as typeof fetch;
+
+      const provider = new KeycloakIdentityProvider({
+        baseUrl: BASE,
+        realm: REALM,
+        serviceClientId: "trellis-api",
+        serviceClientSecret: secret,
+        appClientId: "trellis-app",
+        fetchFn: leakyFetch,
+      });
+
+      let caught: unknown;
+      try {
+        await provider.initiateMagicLink("user1@example.test", LINK_OPTS);
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(IdentityProviderError);
+      const e = caught as IdentityProviderError;
+      expect(e.reason).toBe("provider_error");
+      expect(e.message).toBe("Keycloak token endpoint unreachable");
+      // The raw error (which carried the secret) must NOT propagate.
+      expect(e.message).not.toContain(secret);
+      expect(e.message).not.toContain("ECONNREFUSED");
+    });
+  });
+
   describe("service-token caching", () => {
     it("reuses the token within its lifetime and refreshes after expiry", async () => {
       const state = freshState();

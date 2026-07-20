@@ -115,15 +115,28 @@ export class KeycloakIdentityProvider implements IdentityProviderPort {
     if (this.cachedToken !== null && this.now() < this.cachedTokenExpiresAt) {
       return this.cachedToken;
     }
-    const res = await this.fetchFn(`${this.issuerUrl}/protocol/openid-connect/token`, {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        grant_type: "client_credentials",
-        client_id: this.cfg.serviceClientId,
-        client_secret: this.cfg.serviceClientSecret,
-      }),
-    });
+    // [F5] The client_secret is sent in this request body. A raw fetch
+    // rejection (DNS/connection error, or an undici/error that echoes the
+    // request `body`) could surface the secret in a propagated stack/message.
+    // Wrap it and rethrow a clean, secret-free IdentityProviderError — never
+    // let the underlying error escape this method.
+    let res: Response;
+    try {
+      res = await this.fetchFn(`${this.issuerUrl}/protocol/openid-connect/token`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type: "client_credentials",
+          client_id: this.cfg.serviceClientId,
+          client_secret: this.cfg.serviceClientSecret,
+        }),
+      });
+    } catch {
+      throw new IdentityProviderError(
+        "provider_error",
+        "Keycloak token endpoint unreachable",
+      );
+    }
     if (!res.ok) {
       throw new IdentityProviderError(
         res.status === 401 || res.status === 403 ? "unauthorized" : "provider_error",
