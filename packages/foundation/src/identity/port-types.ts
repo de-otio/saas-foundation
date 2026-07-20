@@ -71,6 +71,13 @@ export interface MagicLinkInitiation {
    */
   readonly link?: string;
   /**
+   * Opaque provider continuation handle, when completing the sign-in requires
+   * presenting one alongside the emailed proof (Cognito: the CUSTOM_AUTH
+   * `Session` the client passes to RespondToAuthChallenge). Absent for
+   * providers whose link is self-contained (Keycloak ActionToken).
+   */
+  readonly handle?: string;
+  /**
    * True when initiation itself caused the sign-in email to be sent (the
    * Cognito path: the create-auth-challenge trigger emails the link). False
    * when delivery is the caller's job (`link` is set).
