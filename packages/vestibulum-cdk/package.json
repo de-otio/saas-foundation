@@ -41,24 +41,24 @@
     "lint": "eslint lib test scripts"
   },
   "peerDependencies": {
-    "aws-cdk-lib": "^2.260.0",
+    "aws-cdk-lib": "^2.261.0",
     "cdk-nag": "^2.0.0",
-    "constructs": "^10.0.0"
+    "constructs": "^10.7.1"
   },
   "devDependencies": {
-    "@aws-sdk/client-lambda": "^3.700.0",
+    "@aws-sdk/client-lambda": "^3.1091.0",
     "@de-otio/vestibulum": "*",
     "@types/adm-zip": "^0.5.7",
     "@types/node": "^25.0.0",
-    "aws-cdk-lib": "^2.260.0",
+    "aws-cdk-lib": "^2.261.0",
     "cdk-nag": "^2.0.0",
-    "constructs": "^10.0.0",
+    "constructs": "^10.7.1",
     "esbuild": "0.28.1"
   },
   "publishConfig": {
     "access": "public"
   },
   "dependencies": {
-    "adm-zip": "^0.5.16"
+    "adm-zip": "^0.6.0"
   }
 }
