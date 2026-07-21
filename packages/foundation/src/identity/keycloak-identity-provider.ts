@@ -128,7 +128,13 @@ export class KeycloakIdentityProvider implements IdentityProviderPort {
     this.cfg = config;
     this.fetchFn = config.fetchFn ?? fetch;
     this.now = config.now ?? Date.now;
-    this.base = config.baseUrl.replace(/\/+$/, "");
+    // Strip trailing slashes with a linear scan, not a backtracking regex
+    // (/\/+$/ is flagged js/polynomial-redos). Behaviour-identical, ReDoS-free.
+    let base = config.baseUrl;
+    while (base.endsWith("/")) {
+      base = base.slice(0, -1);
+    }
+    this.base = base;
   }
 
   /** The realm issuer URL (`{base}/realms/{realm}`) this adapter targets. */

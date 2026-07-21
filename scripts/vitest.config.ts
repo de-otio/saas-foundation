@@ -14,9 +14,13 @@ export default defineConfig({
     name: "scripts",
     include: ["ci/**/*.test.ts", "ci/**/*.spec.ts"],
     pool: "threads",
-    poolOptions: { threads: { maxThreads: 2, minThreads: 1 } },
+    // vitest 4 removed `poolOptions`; the thread cap is the top-level `maxWorkers`.
+    // This project keeps a lower cap (2) than the packages (4), so it needs a
+    // distinct `sequence.groupOrder` — vitest 4 requires projects that share a
+    // groupOrder to agree on maxWorkers.
+    maxWorkers: 2,
     isolate: true,
-    sequence: { shuffle: true, seed: 1000 },
+    sequence: { shuffle: true, seed: 1000, groupOrder: 1 },
     testTimeout: 5000,
     hookTimeout: 5000,
   },
