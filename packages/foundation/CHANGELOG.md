@@ -1,5 +1,47 @@
 # @de-otio/saas-foundation
 
+## 0.4.0
+
+### Minor Changes
+
+- 7d22707: Add the `KvStore` typed atomic-primitive port + adapters (WS-1 KV port)
+
+  A sibling to the Cloudflare-compat `KVNamespace`, `KvStore` adds the atomic
+  primitives the raw-DynamoDB call sites need: `get` (TTL-aware, optionally
+  strongly-consistent or `includeExpired`), `put`, `putIfAbsent`
+  (expired-as-absent), `putIfFresher` (TTL-monotonic freshness), `compareAndSet`,
+  `increment` (server-side add, field-identifier validated), version-guarded
+  `delete`, and `queryByIndex`. All additive/non-breaking.
+
+  Adapters: `MemoryKvStore` (tests), `DynamoKvStore` (AWS reference, byte-compat
+  layout-parameterized, `allowSeparatorInKey` for composite keys), and — behind
+  the new `@de-otio/saas-foundation/kv/postgres` sub-path so no `pg`/SQL surface
+  leaks into the core `kv` barrel — `PostgresKvStore` + `SqlExecutor` +
+  `sweepExpiredKvEntries`. Also adds `PostgresTokenBucketLimiter` to the
+  `rate-limit` module (raw-SQL sibling of the Dynamo limiter, bounded-retry
+  fail-open, F5). A shared adapter-contract suite proves all three adapters
+  behaviourally identical, incl. real-concurrency lanes on DynamoDB/Postgres.
+
+  Coordinated with the `@de-otio/vestibulum` minor bump in the same release
+  window (single-owner publish, EXECUTION-COORDINATION X3).
+
+- f71df2b: Add the `IdentityProviderPort` + Keycloak adapter (WS-3.3 identity module)
+
+  New `@de-otio/saas-foundation/identity` sub-path: a deliberately minimal,
+  provider-neutral identity port — `initiateMagicLink(email, opts)` (per-email
+  rate limiting stays with the API caller) and `deleteUser({ email })`
+  (absorbing the WS-2 provisional `IdentityAdminPort`, X6) — plus
+  `KeycloakIdentityProvider`, implementing the phasetwo magic-link REST contract
+  the G2 spike proved live (service-account client_credentials token,
+  `send_email=false` — the app owns the sign-in email, `reusable=false`) and
+  admin ops (get/delete user; sub-preserving `createUser` via `partialImport`
+  with a fail-not-overwrite collision pre-flight — G2 E-1: `POST /users`
+  regenerates caller ids). Fail-closed on missing config; injectable
+  fetch/clock. Additive/non-breaking.
+
+  Part of the same coordinated release window as the WS-1/WS-3.1 minors
+  (single-owner publish, EXECUTION-COORDINATION X3).
+
 ## 0.3.2
 
 ### Patch Changes

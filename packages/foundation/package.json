@@ -1,6 +1,6 @@
 {
   "name": "@de-otio/saas-foundation",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "type": "module",
   "description": "Runtime core for de-otio multi-tenant SaaS backends",
   "license": "Apache-2.0",
