@@ -20,7 +20,9 @@ export default defineConfig({
     // which is incompatible with vitest's thread-worker stdio. Use forks
     // so each worker has a real process stdio.
     pool: "forks",
-    poolOptions: { forks: { maxForks: 4, minForks: 2 } },
+    // vitest 4 removed `poolOptions`; the cap is the top-level `maxWorkers`
+    // (pool-agnostic — applies to the forks pool too).
+    maxWorkers: 4,
     isolate: true,
     sequence: { shuffle: true, seed: 1000 },
     testTimeout: 5000,

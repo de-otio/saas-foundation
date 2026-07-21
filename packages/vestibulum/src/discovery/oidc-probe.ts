@@ -45,6 +45,7 @@ import { isIP } from "node:net";
 import { Agent } from "undici";
 
 import { OidcProbeError } from "../errors.js";
+import { PERMITTED_ALGS } from "../verify/permitted-algs.js";
 import { isPrivateAddress } from "./private-ip.js";
 
 const PROBE_TIMEOUT_MS = 5000;
@@ -56,19 +57,6 @@ const MAX_ISSUER_URL_LENGTH = 2048;
  * to build the probe URL.
  */
 const WELL_KNOWN_PATH = ".well-known/openid-configuration";
-
-/**
- * Signing algorithms accepted by the probe. `none` is rejected per
- * RFC 7518 §3.1 and the Cognito hosted-UI behaviour.
- */
-const PERMITTED_ALGS: ReadonlySet<string> = new Set([
-  "RS256",
-  "RS384",
-  "RS512",
-  "ES256",
-  "ES384",
-  "ES512",
-]);
 
 /**
  * Cognito's only supported client-authentication method

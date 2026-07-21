@@ -40,6 +40,9 @@ export {
 export type { DynamoTokenBucketLimiterOptions } from "./dynamo-limiter.js";
 export { DynamoTokenBucketLimiter } from "./dynamo-limiter.js";
 
+export type { PostgresTokenBucketLimiterOptions } from "./postgres-limiter.js";
+export { PostgresTokenBucketLimiter } from "./postgres-limiter.js";
+
 /**
  * @beta-test-only — in-memory store; not cross-process safe.
  */

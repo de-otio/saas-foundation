@@ -137,3 +137,39 @@ export class MultiPoolVerifierError extends VestibulumRuntimeError {
     this.reason = reason;
   }
 }
+
+/**
+ * Reasons returned by {@link IssuerVerifierError} — the generic single-issuer
+ * OIDC verifier (`verify/issuer-verifier.ts`).
+ *
+ * `invalid_signature` is the ONLY reason for which a JWKS reset+retry can
+ * change the outcome (a signing key rotated in after the last fetch). Every
+ * other reason is a **permanent** failure — the wrapper must not reset the
+ * JWKS cache or retry, or an unauthenticated attacker can thrash it with bad
+ * tokens (see WS-3.1 §2.7 [SEC-2]).
+ *   - `missing_exp`     — no `exp`, or `exp` is not a finite number (the
+ *                         library accepts an `exp`-less token forever — [SEC-1]).
+ *   - `disallowed_alg`  — header `alg` is outside {@link PERMITTED_ALGS}
+ *                         (rejects EdDSA / PS256 the library would accept —
+ *                         [SEC-5]).
+ */
+export type IssuerVerifierReason =
+  | "unknown_issuer"
+  | "expired"
+  | "not_yet_valid"
+  | "invalid_signature"
+  | "wrong_audience"
+  | "wrong_token_use"
+  | "missing_exp"
+  | "disallowed_alg"
+  | "malformed_token"
+  | "invalid_claim";
+
+export class IssuerVerifierError extends VestibulumRuntimeError {
+  public readonly reason: IssuerVerifierReason;
+
+  constructor(reason: IssuerVerifierReason, message: string) {
+    super(`issuer_verifier.${reason}`, message);
+    this.reason = reason;
+  }
+}
