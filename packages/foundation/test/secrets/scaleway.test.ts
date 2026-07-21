@@ -47,7 +47,7 @@ const byIdRef: ScalewaySecretRef = {
 
 describe("scalewaySecretRef validation", () => {
   it("requires a region and one of secretId/name", () => {
-    expect(() => scalewaySecretRef({ region: "" } as ScalewaySecretRef)).toThrow(
+    expect(() => scalewaySecretRef({ region: "" })).toThrow(
       ScalewaySecretRefValidationError,
     );
     expect(() => scalewaySecretRef({ region: "fr-par" })).toThrow(
@@ -79,11 +79,14 @@ describe("resolveScalewaySecret — routes and auth", () => {
     const bytes = await resolveScalewaySecret(byIdRef, ctx);
     expect(bytes.toString("utf8")).toBe("s3cret");
 
-    const [url, init] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[0];
+    const [url, init] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
     expect(url).toBe(
       "https://api.scaleway.com/secret-manager/v1beta1/regions/fr-par/secrets/11111111-2222-3333-4444-555555555555/versions/latest_enabled/access",
     );
-    expect(init.headers["X-Auth-Token"]).toBe("test-token");
+    expect((init.headers as Record<string, string>)["X-Auth-Token"]).toBe("test-token");
   });
 
   it("hits the by-path route with secret_name/secret_path/project_id query params", async () => {
@@ -103,7 +106,7 @@ describe("resolveScalewaySecret — routes and auth", () => {
       ctx,
     );
 
-    const url = new URL((fetchFn as ReturnType<typeof vi.fn>).mock.calls[0][0]);
+    const url = new URL((fetchFn as ReturnType<typeof vi.fn>).mock.calls[0][0] as string);
     expect(url.pathname).toBe(
       "/secret-manager/v1beta1/regions/nl-ams/secrets-by-path/versions/latest/access",
     );
@@ -130,7 +133,7 @@ describe("resolveScalewaySecret — routes and auth", () => {
 describe("resolveScalewaySecret — error classification (fail-closed)", () => {
   it("404 → SecretsNotFoundError", async () => {
     const ctx = makeContext(
-      vi.fn(async () => jsonResponse(404, { message: "not found" })) as unknown as typeof fetch,
+      vi.fn(async () => jsonResponse(404, { message: "not found" })),
     );
     await expect(resolveScalewaySecret(byIdRef, ctx)).rejects.toBeInstanceOf(
       SecretsNotFoundError,
@@ -140,7 +143,7 @@ describe("resolveScalewaySecret — error classification (fail-closed)", () => {
   it("403 and 401 → SecretsAccessDeniedError", async () => {
     for (const status of [401, 403]) {
       const ctx = makeContext(
-        vi.fn(async () => jsonResponse(status, {})) as unknown as typeof fetch,
+        vi.fn(async () => jsonResponse(status, {})),
       );
       await expect(resolveScalewaySecret(byIdRef, ctx)).rejects.toBeInstanceOf(
         SecretsAccessDeniedError,
@@ -187,7 +190,7 @@ describe("resolveScalewaySecret — error classification (fail-closed)", () => {
 
   it("missing data field → SecretsResolveError (never an empty Buffer)", async () => {
     const ctx = makeContext(
-      vi.fn(async () => jsonResponse(200, { revision: 1 })) as unknown as typeof fetch,
+      vi.fn(async () => jsonResponse(200, { revision: 1 })),
     );
     await expect(resolveScalewaySecret(byIdRef, ctx)).rejects.toBeInstanceOf(
       SecretsResolveError,

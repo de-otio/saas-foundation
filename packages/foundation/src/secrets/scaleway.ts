@@ -69,12 +69,17 @@ export class ScalewaySecretRefValidationError extends Error {
   override readonly name = "ScalewaySecretRefValidationError";
 }
 
+/** True when a nullable string holds a non-empty value (empty === absent). */
+function present(v: string | undefined): v is string {
+  return v != null && v !== "";
+}
+
 /** Validate + freeze a {@link ScalewaySecretRef}. Throws on nonsense. */
 export function scalewaySecretRef(ref: ScalewaySecretRef): ScalewaySecretRef {
   if (!ref.region || typeof ref.region !== "string") {
     throw new ScalewaySecretRefValidationError("region is required");
   }
-  if (!ref.secretId && !ref.name) {
+  if (!present(ref.secretId) && !present(ref.name)) {
     throw new ScalewaySecretRefValidationError("one of secretId or name is required");
   }
   if (ref.revision !== undefined && !/^(latest|latest_enabled|\d+)$/.test(ref.revision)) {
@@ -127,7 +132,7 @@ export function _resetScalewayDefaultCacheForTests(): void {
 
 function cacheKey(ref: ScalewaySecretRef): string {
   const revision = ref.revision ?? "latest_enabled";
-  const ident = ref.secretId
+  const ident = present(ref.secretId)
     ? `id:${ref.secretId}`
     : `name:${ref.projectId ?? ""}:${ref.path ?? "/"}:${ref.name}`;
   return `scw-secret:${ref.region}:${ident}:${revision}`;
@@ -136,12 +141,12 @@ function cacheKey(ref: ScalewaySecretRef): string {
 function accessUrl(baseUrl: string, ref: ScalewaySecretRef): string {
   const revision = encodeURIComponent(ref.revision ?? "latest_enabled");
   const region = encodeURIComponent(ref.region);
-  if (ref.secretId) {
+  if (present(ref.secretId)) {
     return `${baseUrl}/secret-manager/v1beta1/regions/${region}/secrets/${encodeURIComponent(ref.secretId)}/versions/${revision}/access`;
   }
   const params = new URLSearchParams({ secret_name: ref.name ?? "" });
   params.set("secret_path", ref.path ?? "/");
-  if (ref.projectId) params.set("project_id", ref.projectId);
+  if (present(ref.projectId)) params.set("project_id", ref.projectId);
   return `${baseUrl}/secret-manager/v1beta1/regions/${region}/secrets-by-path/versions/${revision}/access?${params.toString()}`;
 }
 
@@ -154,9 +159,9 @@ class TransientHttpError extends Error {
 }
 
 function describeRef(ref: ScalewaySecretRef): string {
-  return ref.secretId
+  return present(ref.secretId)
     ? `id=${ref.secretId} (${ref.region})`
-    : `name=${ref.path ?? "/"}${ref.path?.endsWith("/") ? "" : "/"}${ref.name} (${ref.region})`;
+    : `name=${ref.path ?? "/"}${ref.path?.endsWith("/") === true ? "" : "/"}${ref.name} (${ref.region})`;
 }
 
 /**
@@ -190,7 +195,7 @@ export async function resolveScalewaySecret(
   }
 
   const token = context?.secretKey ?? process.env.SCW_SECRET_KEY;
-  if (!token) {
+  if (!present(token)) {
     throw new SecretsAccessDeniedError(
       `No Scaleway API token available for secret ${describeRef(ref)} — set SCW_SECRET_KEY or pass context.secretKey`,
     );

@@ -278,7 +278,7 @@ describe("KeycloakIdentityProvider", () => {
       // client_secret) — the exact leak F5 guards against.
       const leakyFetch = (async (_input: string | URL, init?: RequestInit) => {
         throw new Error(
-          `ECONNREFUSED — request body was ${String(init?.body)} (client_secret=${secret})`,
+          `ECONNREFUSED — request body was ${init?.body == null ? "" : String(init.body as string | URLSearchParams)} (client_secret=${secret})`,
         );
       }) as unknown as typeof fetch;
 
