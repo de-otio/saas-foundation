@@ -16,8 +16,10 @@
 export class VestibulumRuntimeError extends Error {
   public readonly code: string;
 
-  constructor(code: string, message: string) {
-    super(message);
+  constructor(code: string, message: string, options?: { cause?: unknown }) {
+    // `cause` carries the underlying failure for operators without widening the
+    // public `code`/`message` taxonomy that callers branch on.
+    super(message, options);
     this.name = this.constructor.name;
     this.code = code;
     // Preserve the prototype chain across the bundler boundary
@@ -168,8 +170,8 @@ export type IssuerVerifierReason =
 export class IssuerVerifierError extends VestibulumRuntimeError {
   public readonly reason: IssuerVerifierReason;
 
-  constructor(reason: IssuerVerifierReason, message: string) {
-    super(`issuer_verifier.${reason}`, message);
+  constructor(reason: IssuerVerifierReason, message: string, options?: { cause?: unknown }) {
+    super(`issuer_verifier.${reason}`, message, options);
     this.reason = reason;
   }
 }

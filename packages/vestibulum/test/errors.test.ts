@@ -6,6 +6,7 @@ import {
   IdpManagerError,
   ReservedClaimError,
   MultiPoolVerifierError,
+  IssuerVerifierError,
 } from "../src/errors.js";
 
 describe("errors", () => {
@@ -96,6 +97,29 @@ describe("errors", () => {
       expect(err.reason).toBe(reason);
       expect(err.code).toBe(`multi_pool_verifier.${reason}`);
     });
+  });
+
+  // The verifier collapses JWKS-fetch failures into `invalid_signature` so no
+  // oracle distinguishes "bad signature" from "JWKS unreachable". Operators
+  // still need that distinction, so it rides along as `cause` — without it, a
+  // 404 on a misconfigured jwksUri is indistinguishable from a crypto failure
+  // (exactly the 2026-08-02 live incident).
+  it("threads `cause` through while leaving code/message unchanged", () => {
+    const underlying = new Error("404 fetching https://idp.example.com/.well-known/jwks.json");
+    const err = new IssuerVerifierError("invalid_signature", "Token signature could not be verified.", {
+      cause: underlying,
+    });
+
+    expect(err.cause).toBe(underlying);
+    // the public taxonomy callers branch on must NOT widen
+    expect(err.code).toBe("issuer_verifier.invalid_signature");
+    expect(err.message).toBe("Token signature could not be verified.");
+  });
+
+  it("omitting options leaves cause undefined (no accidental leakage)", () => {
+    const err = new IssuerVerifierError("expired", "Token has expired.");
+    expect(err.cause).toBeUndefined();
+    expect(err.reason).toBe("expired");
   });
 
   it("all errors are instanceof VestibulumRuntimeError", () => {

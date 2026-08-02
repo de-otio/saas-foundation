@@ -89,8 +89,19 @@ export interface IssuerVerifierConfig {
   /** Expected `aud`. A single string or a set of acceptable audiences. */
   readonly audience: string | ReadonlyArray<string>;
   /**
-   * Explicit JWKS override (air-gapped / fixture tests). When unset the library
-   * derives `${issuer}/.well-known/jwks.json`.
+   * Explicit JWKS URI.
+   *
+   * **Required when the resolved issuer kind is `"generic"`.** Left unset, the
+   * underlying library derives `${issuer}/.well-known/jwks.json` — the AWS
+   * **Cognito** convention, which is wrong for essentially every other OIDC
+   * provider (Keycloak publishes at `/protocol/openid-connect/certs`). The
+   * derived URL then 404s and the missing key surfaces as `invalid_signature`,
+   * so a pure URL misconfiguration is indistinguishable from a crypto failure
+   * and every token is rejected. That combination cost a live debugging session
+   * on 2026-08-02, so a generic issuer must now name its JWKS URI explicitly;
+   * take it from the issuer's `.well-known/openid-configuration` (`jwks_uri`).
+   *
+   * Optional for `"cognito"`, where the derived default is correct.
    */
   readonly jwksUri?: string;
   /**
@@ -253,7 +264,15 @@ function toIssuerError(err: unknown): IssuerVerifierError {
     err instanceof JwksNotAvailableInCacheError ||
     err instanceof FetchError
   ) {
-    return new IssuerVerifierError("invalid_signature", "Token signature could not be verified.");
+    // The caller-visible code stays `invalid_signature` — narrowing it per
+    // cause would hand an attacker an oracle distinguishing "bad signature"
+    // from "JWKS unreachable". But the operator needs the difference, so the
+    // underlying error rides along as `cause`: a 404/DNS failure names the URL
+    // it could not fetch, which is what turns "signature failed" back into
+    // "your jwksUri is wrong".
+    return new IssuerVerifierError("invalid_signature", "Token signature could not be verified.", {
+      cause: err,
+    });
   }
   if (err instanceof JwtParseError) {
     return new IssuerVerifierError("malformed_token", "Token is not a well-formed JWT.");
@@ -273,6 +292,19 @@ export function createIssuerVerifier(config: IssuerVerifierConfig): IssuerVerifi
     throw new Error("createIssuerVerifier: issuer is required");
   }
   const kind = resolveIssuerKind(config);
+  // Fail closed at construction, not at the first 401. `JwtVerifier`'s default
+  // jwksUri is Cognito-shaped (`${issuer}/.well-known/jwks.json`); for any
+  // other OIDC provider that URL is wrong, and a wrong URL is reported as
+  // `invalid_signature` (see toIssuerError) — a config error wearing a crypto
+  // error's clothes. Boot-time refusal is the only place this is cheap to
+  // diagnose.
+  if (kind === "generic" && config.jwksUri === undefined) {
+    throw new Error(
+      "createIssuerVerifier: jwksUri is required for a generic OIDC issuer — " +
+        "the derived default is Cognito-specific and will 404 elsewhere. " +
+        `Read jwks_uri from ${config.issuer}/.well-known/openid-configuration.`,
+    );
+  }
   const customJwtCheck = buildCustomJwtCheck(config, kind);
   const audience: string | string[] =
     typeof config.audience === "string" ? config.audience : [...config.audience];

@@ -464,6 +464,64 @@ describe("issuer-verifier — rotation + narrowed retry [SEC-2]", () => {
 /* =============================================================== *
  * Generic (non-Cognito) issuer branch — fixture-only in WS-3.1    *
  * =============================================================== */
+/**
+ * REGRESSION (2026-08-02, live): the dev API rejected EVERY Keycloak token with
+ * `invalid_signature`. The token was genuine; `jwksUri` was simply unset, so
+ * `JwtVerifier` fell back to its Cognito-shaped default
+ * `${issuer}/.well-known/jwks.json`, which 404s on Keycloak. A missing key maps
+ * to `invalid_signature`, so a wrong URL impersonated a crypto failure.
+ *
+ * Every generic-branch test below already passed an explicit `jwksUri` — the
+ * suite supplied precisely what production omitted, which is why the gap
+ * survived review. These tests pin the construction-time refusal instead.
+ */
+describe("issuer-verifier — generic issuer requires an explicit jwksUri", () => {
+  const kcIssuer = "https://keycloak.example.com/realms/trellis";
+
+  it("throws at construction when a generic issuer has no jwksUri", () => {
+    expect(() =>
+      createIssuerVerifier({
+        issuer: kcIssuer,
+        audience: "trellis-api",
+        issuerKind: "generic",
+      }),
+    ).toThrow(/jwksUri is required for a generic OIDC issuer/);
+  });
+
+  it("names the discovery document so the fix is actionable", () => {
+    expect(() =>
+      createIssuerVerifier({ issuer: kcIssuer, audience: "a", issuerKind: "generic" }),
+    ).toThrow(new RegExp(`${kcIssuer}/\\.well-known/openid-configuration`));
+  });
+
+  it("still refuses when the kind is INFERRED as generic rather than declared", () => {
+    // The inference path is the one production actually took.
+    expect(() => createIssuerVerifier({ issuer: kcIssuer, audience: "a" })).toThrow(
+      /jwksUri is required/,
+    );
+  });
+
+  it("does NOT require jwksUri for a cognito issuer (derived default is correct)", () => {
+    expect(() =>
+      createIssuerVerifier({
+        issuer: "https://cognito-idp.eu-central-1.amazonaws.com/eu-central-1_abc123",
+        audience: "client-id",
+      }),
+    ).not.toThrow();
+  });
+
+  it("accepts a generic issuer once jwksUri is supplied", () => {
+    expect(() =>
+      createIssuerVerifier({
+        issuer: kcIssuer,
+        audience: "trellis-api",
+        issuerKind: "generic",
+        jwksUri: `${kcIssuer}/protocol/openid-connect/certs`,
+      }),
+    ).not.toThrow();
+  });
+});
+
 describe("issuer-verifier — generic OIDC branch (fixtures)", () => {
   const kcIssuer = "https://keycloak.example.com/realms/trellis";
   const kcConfig = {
