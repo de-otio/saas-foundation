@@ -97,6 +97,22 @@ export type {
 } from "./verify/issuer-verifier.js";
 export { PERMITTED_ALGS } from "./verify/permitted-algs.js";
 
+// ---- [JWKS-FALLBACK] bounded stale-JWKS fallback -----------------------------------
+export {
+  JWKS_FALLBACK_DEFAULT_MAX_STALENESS_SECONDS,
+  createStaleFallbackJwksCache,
+  readCachedJwks,
+  buildJwksEnvelope,
+} from "./verify/jwks-fallback.js";
+export type {
+  JwksCacheStore,
+  JwksFallbackOptions,
+  JwksFallbackLogger,
+  JwksFallbackCacheDeps,
+  JwksCacheReadResult,
+  JwksCacheRejectReason,
+} from "./verify/jwks-fallback.js";
+
 // ---- IdP managers ----------------------------------------------------------
 export { OidcIdpManager } from "./idp/oidc-manager.js";
 export type { OidcIdpRecord, OidcIdpInput } from "./idp/oidc-manager.js";

@@ -43,6 +43,17 @@
  * Cognito→Keycloak swap with `sub` preserved 1:1. Concurrent multi-issuer
  * operation needs an `{iss}#{sub}` identity key (a data migration) — deferred
  * to WS-3.3.
+ *
+ * ## [JWKS-FALLBACK] Optional bounded stale-JWKS fallback
+ *
+ * `jwksFallback` is **opt-in and off by default**. When it is omitted the
+ * verifier is constructed exactly as before — `JwtVerifier.create(props)` with
+ * a single argument, the library's own `SimpleJwksCache`, no store, no extra
+ * I/O. When it is supplied, a successful JWKS fetch is persisted through the
+ * caller's {@link JwksCacheStore} and a *failed* fetch may be served from that
+ * copy, bounded to 7 days by default. See `verify/jwks-fallback.ts` for the
+ * validation rules — the persisted value is untrusted input and is re-parsed
+ * and re-validated on every read.
  */
 
 import { JwtVerifier } from "aws-jwt-verify";
@@ -61,6 +72,7 @@ import {
 } from "aws-jwt-verify/error";
 
 import { IssuerVerifierError } from "../errors.js";
+import { createStaleFallbackJwksCache, type JwksFallbackOptions } from "./jwks-fallback.js";
 import { PERMITTED_ALGS } from "./permitted-algs.js";
 
 /**
@@ -102,6 +114,18 @@ export interface IssuerVerifierConfig {
   readonly expectedTyp?: string;
   /** Override the alg allowlist (defaults to {@link PERMITTED_ALGS}). */
   readonly algAllowlist?: ReadonlySet<string>;
+  /**
+   * [JWKS-FALLBACK] Opt-in bounded stale-JWKS fallback. **Omit for today's behaviour**
+   * — when unset, no cache object is constructed and `JwtVerifier.create` is
+   * called with a single argument, exactly as before.
+   *
+   * When set, the last successfully fetched JWKS is persisted through
+   * `store`, and a JWKS fetch failure (unreachable IdP) falls back to that copy
+   * for at most `maxStalenessSeconds` (default 7 days), emitting a warning on
+   * every use. A successful fetch always wins; the kid-rotation refetch path is
+   * unchanged.
+   */
+  readonly jwksFallback?: JwksFallbackOptions;
 }
 
 /** The shape returned by {@link IssuerVerifier.verify}. */
@@ -254,14 +278,25 @@ export function createIssuerVerifier(config: IssuerVerifierConfig): IssuerVerifi
     typeof config.audience === "string" ? config.audience : [...config.audience];
   const graceSeconds = config.graceSeconds ?? 0;
 
-  const build = (): RawJwtVerifier =>
-    JwtVerifier.create({
+  const fallback = config.jwksFallback;
+
+  const build = (): RawJwtVerifier => {
+    const props = {
       issuer: config.issuer,
       audience,
       ...(config.jwksUri !== undefined ? { jwksUri: config.jwksUri } : {}),
       graceSeconds,
       customJwtCheck,
+    };
+    // No fallback configured → the call is byte-identical to the pre-[JWKS-FALLBACK]
+    // code path: a single argument, the library's own default JwksCache.
+    if (fallback === undefined) return JwtVerifier.create(props);
+    // A NEW cache per build: the [SEC-2] reset must still drop the in-memory
+    // JWKS so the retry genuinely refetches.
+    return JwtVerifier.create(props, {
+      jwksCache: createStaleFallbackJwksCache({ ...fallback, issuer: config.issuer }),
     });
+  };
 
   let verifier: RawJwtVerifier = build();
 
