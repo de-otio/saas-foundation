@@ -1,5 +1,39 @@
 # @de-otio/saas-foundation
 
+## 0.4.2
+
+### Patch Changes
+
+- Fix `registerUser` to create users with `POST /admin/realms/{realm}/users`
+  instead of the sub-preserving `partialImport`.
+
+  `registerUser` delegated to `createUser`, which uses `partialImport`. That
+  **fails 403 for a `manage-users` service account** — verified live against
+  Keycloak on 2026-08-07, where it made every registration return 503:
+
+  | endpoint        | role required                | service account |
+  | --------------- | ---------------------------- | --------------- |
+  | `partialImport` | `manage-realm` (realm-admin) | **403**         |
+  | `POST /users`   | `manage-users`               | **201**         |
+
+  `partialImport` exists to preserve a caller-specified id (G2 E-1: `POST /users`
+  silently regenerates one). That matters for **migration** and not at all for
+  registration, which deliberately does not choose the `sub` — letting a public
+  signup path pick the identifier the whole system keys on would be the bug, not
+  the feature. So the only thing `partialImport` bought here was a realm-admin
+  credential on the consuming API, able to rewrite clients, roles and
+  authentication flows, in order to create one user.
+
+  `createUser` is unchanged and still uses `partialImport`: sub preservation is
+  its whole purpose, and its callers are migration tooling that legitimately runs
+  with broader rights.
+
+  Behaviour is otherwise identical. The collision pre-flight is kept
+  (fail-not-overwrite: an existing email yields `"exists"` and is never
+  modified), and Keycloak's own `409` is now also mapped to `"exists"` — two
+  concurrent registrations for one address can both pass the pre-flight, and
+  losing that race must still not overwrite anything.
+
 ## 0.4.1
 
 ### Patch Changes
