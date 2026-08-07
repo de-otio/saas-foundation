@@ -111,6 +111,60 @@ export interface IdentityProviderPort {
    * §1.1); whether a missing user throws or no-ops is adapter-documented.
    */
   deleteUser(input: { readonly email: string }): Promise<void>;
+
+  /**
+   * Create a not-yet-existing end user, carrying the signup attributes the
+   * application provisions from on first sign-in.
+   *
+   * **OPTIONAL — check before calling.** A provider whose registration happens
+   * client-side against its own SDK (Cognito + Amplify `signUp`, where the
+   * pre-signup trigger sees `clientMetadata` the server never handles) does not
+   * implement this, and must not be made to: the working path there is the
+   * client's. Callers MUST branch on its absence explicitly and fail loudly —
+   * treating "not implemented" as "nothing to do" is how a registration
+   * silently drops its gates.
+   *
+   * ## Why this is on the port at all
+   *
+   * `createUser` (sub-preserving `partialImport`) is deliberately an *adapter*
+   * method — see the note on this file's header: admin operations stay off the
+   * port so product code cannot depend on them. Registration changes that
+   * calculus. It is not migration or ops tooling; it is the product's front
+   * door, and on a brokered-IdP deployment there is no other way to get the
+   * signup attributes onto the user before the first token is issued.
+   *
+   * ## The attributes are privilege-bearing
+   *
+   * Whatever the application provisions from — invitation code, date of birth,
+   * guardian email — is trusted at provisioning time. It follows that this call
+   * must only ever be reachable from a server-side path that has already
+   * validated them (the invitation gate, the age computation). Never expose it
+   * to a client, and never let it overwrite an existing user: implementations
+   * return `"exists"` rather than mutating, so a replayed registration cannot
+   * rewrite someone's date of birth or re-consume an invitation.
+   *
+   * @returns `"created"` on success, `"exists"` when the email is already
+   *   registered — never a partial write.
+   * @throws IdentityProviderError `unauthorized` / `provider_error`.
+   */
+  registerUser?(input: RegisterUserInput): Promise<"created" | "exists">;
+}
+
+/** Input for {@link IdentityProviderPort.registerUser}. */
+export interface RegisterUserInput {
+  readonly email: string;
+  /**
+   * Provider attributes to stamp on the new user. Multi-valued to match
+   * Keycloak's own shape; single-valued providers take the first entry.
+   */
+  readonly attributes?: Readonly<Record<string, ReadonlyArray<string>>>;
+  /**
+   * Whether the address counts as verified at creation. Defaults to **false**:
+   * registration has not proven the address yet — the magic link that follows
+   * is what proves it. Passing true here would let an attacker register an
+   * address they do not control and have it treated as verified.
+   */
+  readonly emailVerified?: boolean;
 }
 
 /** A provider-side user record (adapter admin surface, not on the port). */

@@ -30,12 +30,15 @@
  * no live Keycloak, no docker.
  */
 
+import { randomUUID } from "node:crypto";
+
 import { IdentityProviderError } from "./errors.js";
 import type {
   IdentityProviderPort,
   IdentityUser,
   MagicLinkInitiation,
   MagicLinkOptions,
+  RegisterUserInput,
 } from "./port-types.js";
 
 export interface KeycloakIdentityProviderConfig {
@@ -420,6 +423,33 @@ export class KeycloakIdentityProvider implements IdentityProviderPort {
     }
     const body = (await res.json()) as { added?: number; skipped?: number };
     return body.added === 1 ? "created" : "conflict";
+  }
+
+  /**
+   * Register a new end user with its signup attributes ({@link
+   * IdentityProviderPort.registerUser}).
+   *
+   * Delegates to {@link createUser}, which uses `partialImport` with a
+   * collision pre-flight, so a replayed registration returns `"exists"` and
+   * never rewrites the existing user's attributes — the property that stops a
+   * replay from overwriting a date of birth or re-consuming an invitation.
+   *
+   * The id is generated here rather than taken from the caller: preserving a
+   * caller-chosen `sub` is a migration concern (that is what `createUser` is
+   * for), and letting a registration path choose the `sub` would hand it
+   * control of an identifier the whole system keys on.
+   *
+   * `emailVerified` defaults to **false** — registration has not proven the
+   * address. The magic link sent immediately afterwards is what proves it.
+   */
+  async registerUser(input: RegisterUserInput): Promise<"created" | "exists"> {
+    const result = await this.createUser({
+      id: randomUUID(),
+      email: input.email,
+      emailVerified: input.emailVerified ?? false,
+      ...(input.attributes !== undefined ? { attributes: input.attributes } : {}),
+    });
+    return result === "created" ? "created" : "exists";
   }
 
   private async findUsersByEmail(email: string): Promise<Array<{ id: string }>> {
