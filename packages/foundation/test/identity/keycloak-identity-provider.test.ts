@@ -14,6 +14,7 @@ import { describe, expect, it } from "vitest";
 import {
   IdentityProviderError,
   KeycloakIdentityProvider,
+  type IdentityProviderPort,
   type KeycloakIdentityProviderConfig,
 } from "../../src/identity/index.js";
 
@@ -380,6 +381,92 @@ describe("KeycloakIdentityProvider", () => {
       const result = await provider.createUser({ id: "u-9", email: "user1@example.test" });
       expect(result).toBe("conflict");
       expect(state.users.has("u-9")).toBe(false);
+    });
+  });
+
+  describe("registerUser (product registration — attributes at creation)", () => {
+    it("stamps the signup attributes on the new user", async () => {
+      // These attributes are the whole point: the application provisions its
+      // invitation gate and age tier from them on first sign-in, so a create
+      // that drops them yields an un-gated account rather than an error.
+      const state = freshState();
+      const provider = makeProvider(state);
+
+      const result = await provider.registerUser({
+        email: "newcomer@example.test",
+        attributes: {
+          invitationCode: ["INVITE-1"],
+          dateOfBirth: ["2000-01-01"],
+          guardianEmail: ["parent@example.test"],
+        },
+      });
+
+      expect(result).toBe("created");
+      const created = [...state.users.values()].find((u) => u.email === "newcomer@example.test");
+      expect(created?.attributes).toEqual({
+        invitationCode: ["INVITE-1"],
+        dateOfBirth: ["2000-01-01"],
+        guardianEmail: ["parent@example.test"],
+      });
+    });
+
+    it("does NOT mark the address verified by default", async () => {
+      // Registration has not proven the address — the magic link that follows
+      // is what proves it. Creating the user pre-verified would let someone
+      // register an address they do not control and have it trusted.
+      const state = freshState();
+      const provider = makeProvider(state);
+
+      await provider.registerUser({ email: "unproven@example.test" });
+
+      const imported = state.requests.find((r) => r.url.endsWith("/partialImport"));
+      const user = (imported!.body as { users: Array<{ emailVerified: boolean }> }).users[0]!;
+      expect(user.emailVerified).toBe(false);
+    });
+
+    it("generates the id rather than accepting one", async () => {
+      // Sub-preserving creation is a MIGRATION concern (createUser). A
+      // registration path that chose the sub would control the identifier the
+      // whole system keys on.
+      const state = freshState();
+      const provider = makeProvider(state);
+
+      await provider.registerUser({ email: "a@example.test" });
+      await provider.registerUser({ email: "b@example.test" });
+
+      const ids = [...state.users.values()]
+        .filter((u) => u.email.endsWith("@example.test") && u.id !== "u-1")
+        .map((u) => u.id);
+      expect(new Set(ids).size).toBe(ids.length);
+      for (const id of ids) {
+        expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+      }
+    });
+
+    it("returns exists for a known email WITHOUT rewriting it", async () => {
+      // The replay property. A resubmitted registration must not be able to
+      // overwrite an existing user's date of birth or re-consume an invitation.
+      const state = freshState();
+      state.users.set("u-2", {
+        id: "u-2",
+        email: "taken@example.test",
+        attributes: { dateOfBirth: ["1990-01-01"] },
+      });
+      const provider = makeProvider(state);
+
+      const result = await provider.registerUser({
+        email: "taken@example.test",
+        attributes: { dateOfBirth: ["2015-06-06"], invitationCode: ["REPLAY"] },
+      });
+
+      expect(result).toBe("exists");
+      expect(state.users.get("u-2")?.attributes).toEqual({ dateOfBirth: ["1990-01-01"] });
+      expect(state.requests.some((r) => r.url.endsWith("/partialImport"))).toBe(false);
+    });
+
+    it("satisfies the optional port method", () => {
+      const port: IdentityProviderPort = makeProvider(freshState());
+      expect(typeof port.registerUser).toBe("function");
     });
   });
 

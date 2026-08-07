@@ -1,5 +1,55 @@
 # @de-otio/saas-foundation
 
+## 0.4.1
+
+### Patch Changes
+
+- Add an optional `registerUser` to `IdentityProviderPort`, with a Keycloak
+  implementation.
+
+  Registration on a brokered-IdP deployment had nowhere to put its signup
+  attributes. `initiateMagicLink` never sets `forceCreate` and `MagicLinkOptions`
+  carries no attribute bag, so a consumer that provisions from Keycloak user
+  attributes — invitation code, date of birth, guardian email — had no way to get
+  them onto the user before the first token was issued. A new user simply could
+  not register, and it failed _silently_: an unknown email returns the deliberate
+  anti-enumeration response while creating nothing.
+
+  `createUser` (sub-preserving `partialImport`) is deliberately an **adapter**
+  method: admin operations stay off the port so product code cannot depend on
+  them. That rationale rested on "only migration/ops tooling needs them", which
+  registration falsifies — it is the product's front door, not tooling. So the
+  capability goes on the port, narrowly: `registerUser({ email, attributes,
+emailVerified })`, with id generation kept inside the adapter. Choosing the
+  `sub` is a migration concern; a registration path that chose it would control
+  the identifier the whole system keys on.
+
+  **Optional, and callers must branch on absence.** A provider whose registration
+  happens client-side against its own SDK (Cognito + Amplify `signUp`, where the
+  pre-signup trigger reads `clientMetadata` the server never handles) should not
+  be forced to implement it — the working path there is the client's. Treating
+  "not implemented" as "nothing to do" is exactly how a registration silently
+  drops its gates, so the contract says to fail loudly instead.
+
+  `emailVerified` defaults to **false**. Registration has not proven the address;
+  the magic link sent afterwards is what proves it. Creating the user
+  pre-verified would let someone register an address they do not control and have
+  it trusted.
+
+  The Keycloak implementation delegates to `createUser`, inheriting its collision
+  pre-flight, so a replayed registration returns `"exists"` and never rewrites the
+  existing user — a resubmit cannot overwrite a date of birth or re-consume an
+  invitation.
+
+  Released as a **patch** despite being a new capability. It is additive and
+  optional — no existing adapter or consumer changes behaviour, nothing breaks.
+  A minor would rewrite `@de-otio/vestibulum`'s `^0.4.0` peer range on
+  `@de-otio/saas-foundation`, and changesets treats a peer-range change as a
+  MAJOR: an untouched package would have been dragged from 0.4.0 to 1.0.0 as a
+  side effect, shipping an already-merged breaking change without its changelog
+  entry and leaving its two pending changesets dangling. Staying in the `0.4.x`
+  range keeps every existing caret pin valid and leaves sibling packages alone.
+
 ## 0.4.0
 
 ### Minor Changes
