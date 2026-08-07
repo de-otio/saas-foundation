@@ -143,7 +143,7 @@ function makeFake(state: FakeKeycloakState): typeof fetch {
     // POST /users — what a `manage-users` service account may do. The fake
     // assigns the id itself, exactly as Keycloak does (G2 E-1).
     if (url === `${BASE}/admin/realms/${REALM}/users` && method === "POST") {
-      const req = JSON.parse(String(init?.body ?? "{}")) as {
+      const req = (body ?? {}) as {
         email: string;
         emailVerified?: boolean;
         attributes?: Record<string, string[]>;
@@ -535,7 +535,7 @@ describe("KeycloakIdentityProvider", () => {
           if (url.endsWith(`/admin/realms/${REALM}/users`) && init?.method === "POST") {
             return new Response(JSON.stringify({ error: "forbidden" }), { status: 403 });
           }
-          return makeFake(state)(input as never, init as never);
+          return makeFake(state)(input, init);
         }) as typeof fetch,
       });
 
