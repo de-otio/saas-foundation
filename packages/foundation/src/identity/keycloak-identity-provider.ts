@@ -30,8 +30,6 @@
  * no live Keycloak, no docker.
  */
 
-import { randomUUID } from "node:crypto";
-
 import { IdentityProviderError } from "./errors.js";
 import type {
   IdentityProviderPort,
@@ -429,27 +427,57 @@ export class KeycloakIdentityProvider implements IdentityProviderPort {
    * Register a new end user with its signup attributes ({@link
    * IdentityProviderPort.registerUser}).
    *
-   * Delegates to {@link createUser}, which uses `partialImport` with a
-   * collision pre-flight, so a replayed registration returns `"exists"` and
-   * never rewrites the existing user's attributes — the property that stops a
-   * replay from overwriting a date of birth or re-consuming an invitation.
+   * Uses `POST /admin/realms/{realm}/users`, **not** the sub-preserving
+   * `partialImport` that {@link createUser} uses. That is a privilege decision,
+   * verified live against KC on 2026-08-07:
    *
-   * The id is generated here rather than taken from the caller: preserving a
-   * caller-chosen `sub` is a migration concern (that is what `createUser` is
-   * for), and letting a registration path choose the `sub` would hand it
-   * control of an identifier the whole system keys on.
+   * | endpoint | role required | service account |
+   * |---|---|---|
+   * | `partialImport` | `manage-realm` (realm-admin) | **403** |
+   * | `POST /users` | `manage-users` | **201** |
    *
-   * `emailVerified` defaults to **false** — registration has not proven the
-   * address. The magic link sent immediately afterwards is what proves it.
+   * `partialImport` exists to preserve a caller-specified id (G2 E-1: `POST
+   * /users` silently regenerates one). That matters for MIGRATION and not at
+   * all here — registration deliberately does not choose the `sub`, since
+   * letting a public signup path pick the identifier the whole system keys on
+   * would be the bug, not the feature. So the only thing `partialImport` buys
+   * is a realm-admin credential on the API's service account, which could then
+   * rewrite clients, roles and flows. Not worth it to create one user.
+   *
+   * Collision pre-flight is kept (fail-not-overwrite): an existing email yields
+   * `"exists"` and the existing user is never modified, so a replayed
+   * registration cannot rewrite a date of birth or re-consume an invitation.
+   *
+   * `emailVerified` defaults to false — registration has not proven the
+   * address; the magic link that follows is what proves it.
    */
   async registerUser(input: RegisterUserInput): Promise<"created" | "exists"> {
-    const result = await this.createUser({
-      id: randomUUID(),
-      email: input.email,
-      emailVerified: input.emailVerified ?? false,
-      ...(input.attributes !== undefined ? { attributes: input.attributes } : {}),
+    const existing = await this.findUsersByEmail(input.email);
+    if (existing.length > 0) return "exists";
+
+    const res = await this.authed(`/admin/realms/${this.cfg.realm}/users`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        username: input.email,
+        email: input.email,
+        emailVerified: input.emailVerified ?? false,
+        enabled: true,
+        ...(input.attributes !== undefined ? { attributes: input.attributes } : {}),
+      }),
     });
-    return result === "created" ? "created" : "exists";
+
+    // 409 is Keycloak's own uniqueness check winning a race with the pre-flight
+    // above. Same outcome, and still fail-not-overwrite: nothing was modified.
+    if (res.status === 409) return "exists";
+    if (!res.ok) {
+      throw new IdentityProviderError(
+        res.status === 401 || res.status === 403 ? "unauthorized" : "provider_error",
+        `Keycloak user create failed (${res.status})`,
+        res.status,
+      );
+    }
+    return "created";
   }
 
   private async findUsersByEmail(email: string): Promise<Array<{ id: string }>> {

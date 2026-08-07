@@ -140,6 +140,26 @@ function makeFake(state: FakeKeycloakState): typeof fetch {
     }
 
     // admin: partialImport (the ONLY id-preserving create — G2 E-1)
+    // POST /users — what a `manage-users` service account may do. The fake
+    // assigns the id itself, exactly as Keycloak does (G2 E-1).
+    if (url === `${BASE}/admin/realms/${REALM}/users` && method === "POST") {
+      const req = JSON.parse(String(init?.body ?? "{}")) as {
+        email: string;
+        emailVerified?: boolean;
+        attributes?: Record<string, string[]>;
+      };
+      if ([...state.users.values()].some((u) => u.email === req.email)) {
+        return json(409, { errorMessage: "User exists with same email" });
+      }
+      const id = `kc-generated-${state.users.size + 1}`;
+      state.users.set(id, {
+        id,
+        email: req.email,
+        ...(req.attributes !== undefined ? { attributes: req.attributes } : {}),
+      });
+      return json(201, {});
+    }
+
     if (url === `${BASE}/admin/realms/${REALM}/partialImport` && method === "POST") {
       if (!authed) return json(401, {});
       const req = body as {
@@ -385,6 +405,27 @@ describe("KeycloakIdentityProvider", () => {
   });
 
   describe("registerUser (product registration — attributes at creation)", () => {
+    it("uses POST /users, NOT the sub-preserving partialImport", async () => {
+      // A privilege decision, verified live on KC 2026-08-07: partialImport
+      // needs `manage-realm` (the service account got 403), POST /users needs
+      // only `manage-users` (201). partialImport exists to preserve a
+      // caller-specified id, which matters for MIGRATION and not here —
+      // registration deliberately does not choose the sub. Using it would have
+      // meant a realm-admin credential on the API, able to rewrite clients,
+      // roles and flows, just to create one user.
+      const state = freshState();
+      const provider = makeProvider(state);
+
+      await provider.registerUser({ email: "newcomer@example.test" });
+
+      expect(state.requests.some((r) => r.url.endsWith("/partialImport"))).toBe(false);
+      expect(
+        state.requests.some(
+          (r) => r.method === "POST" && r.url.endsWith(`/admin/realms/${REALM}/users`),
+        ),
+      ).toBe(true);
+    });
+
     it("stamps the signup attributes on the new user", async () => {
       // These attributes are the whole point: the application provisions its
       // invitation gate and age tier from them on first sign-in, so a create
@@ -419,28 +460,22 @@ describe("KeycloakIdentityProvider", () => {
 
       await provider.registerUser({ email: "unproven@example.test" });
 
-      const imported = state.requests.find((r) => r.url.endsWith("/partialImport"));
-      const user = (imported!.body as { users: Array<{ emailVerified: boolean }> }).users[0]!;
-      expect(user.emailVerified).toBe(false);
+      const create = state.requests.find(
+        (r) => r.method === "POST" && r.url.endsWith(`/admin/realms/${REALM}/users`),
+      );
+      expect((create!.body as { emailVerified: boolean }).emailVerified).toBe(false);
     });
 
-    it("generates the id rather than accepting one", async () => {
-      // Sub-preserving creation is a MIGRATION concern (createUser). A
-      // registration path that chose the sub would control the identifier the
-      // whole system keys on.
+    it("sends no id — Keycloak assigns the sub", async () => {
       const state = freshState();
       const provider = makeProvider(state);
 
       await provider.registerUser({ email: "a@example.test" });
-      await provider.registerUser({ email: "b@example.test" });
 
-      const ids = [...state.users.values()]
-        .filter((u) => u.email.endsWith("@example.test") && u.id !== "u-1")
-        .map((u) => u.id);
-      expect(new Set(ids).size).toBe(ids.length);
-      for (const id of ids) {
-        expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
-      }
+      const create = state.requests.find(
+        (r) => r.method === "POST" && r.url.endsWith(`/admin/realms/${REALM}/users`),
+      );
+      expect(create!.body).not.toHaveProperty("id");
     });
 
     it("returns exists for a known email WITHOUT rewriting it", async () => {
@@ -461,7 +496,52 @@ describe("KeycloakIdentityProvider", () => {
 
       expect(result).toBe("exists");
       expect(state.users.get("u-2")?.attributes).toEqual({ dateOfBirth: ["1990-01-01"] });
-      expect(state.requests.some((r) => r.url.endsWith("/partialImport"))).toBe(false);
+      // The pre-flight caught it — no create was even attempted.
+      expect(
+        state.requests.some(
+          (r) => r.method === "POST" && r.url.endsWith(`/admin/realms/${REALM}/users`),
+        ),
+      ).toBe(false);
+    });
+
+    it("treats Keycloak's own 409 as exists (pre-flight race)", async () => {
+      // Two concurrent registrations for one address: the pre-flight can pass
+      // in both before either writes. Keycloak's uniqueness constraint is the
+      // real arbiter, and losing that race is still fail-not-overwrite.
+      const state = freshState();
+      const provider = makeProvider(state);
+      // Slip the row in AFTER the pre-flight would have run.
+      const original = provider["findUsersByEmail"].bind(provider);
+      (provider as unknown as { findUsersByEmail: unknown }).findUsersByEmail = async (
+        email: string,
+      ) => {
+        const out = await original(email);
+        state.users.set("racer", { id: "racer", email: "race@example.test" });
+        return out;
+      };
+
+      const result = await provider.registerUser({ email: "race@example.test" });
+
+      expect(result).toBe("exists");
+    });
+
+    it("maps a rejected admin call to unauthorized", async () => {
+      // What a service account WITHOUT manage-users gets. Surfacing it as
+      // `unauthorized` is what let the live 403 be diagnosed from one log line.
+      const state = freshState();
+      const provider = makeProvider(state, {
+        fetchFn: (async (input: string | URL, init?: RequestInit) => {
+          const url = typeof input === "string" ? input : input.href;
+          if (url.endsWith(`/admin/realms/${REALM}/users`) && init?.method === "POST") {
+            return new Response(JSON.stringify({ error: "forbidden" }), { status: 403 });
+          }
+          return makeFake(state)(input as never, init as never);
+        }) as typeof fetch,
+      });
+
+      await expect(provider.registerUser({ email: "x@example.test" })).rejects.toMatchObject({
+        reason: "unauthorized",
+      });
     });
 
     it("satisfies the optional port method", () => {
