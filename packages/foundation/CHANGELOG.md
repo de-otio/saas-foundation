@@ -1,5 +1,37 @@
 # @de-otio/saas-foundation
 
+## 0.4.3
+
+### Patch Changes
+
+- `createDefaultS3Client` accepts an optional, S3-specific credential pair.
+
+  The AWS SDK reads exactly ONE credential pair from the environment,
+  `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`, shared by every service. That is
+  right on AWS, where one principal covers everything. It is wrong on a platform
+  whose object storage and message queue issue **separate** credentials: the
+  ambient pair belongs to one of them, so the other receives a well-formed
+  request signed by the wrong principal — surfacing as **403**, which reads like
+  a permissions bug rather than a configuration one.
+
+  So the factory now reads `S3_ACCESS_KEY_ID`/`S3_SECRET_ACCESS_KEY` when both
+  are present. A **half**-configured pair throws at construction rather than
+  falling back to the ambient chain, because that fallback is precisely what
+  produces the misleading 403. An empty string counts as absent, not as a
+  credential — an unset key in a container manifest commonly arrives as `""`.
+
+  Deliberately narrow. Testing the SDK (3.1101) rather than assuming showed most
+  of what looked missing is already there:
+
+  | Concern | Status |
+  | --- | --- |
+  | Endpoint | **Not added.** The SDK resolves `AWS_ENDPOINT_URL_S3` and generic `AWS_ENDPOINT_URL` natively via `@smithy/core`. Verified by probe: a client built with `{ region }` alone requested the host from the env var. |
+  | Path-style addressing | Added as an **escape hatch** (`S3_FORCE_PATH_STYLE`), not a requirement. There is no `AWS_S3_FORCE_PATH_STYLE` env var — the SDK ignores it, only the constructor flag works — and most S3-compatible providers wildcard bucket DNS, so virtual-hosted addressing already resolves. Only the exact string `"true"` enables it. |
+  | Credentials | The real gap; the only thing this change adds. |
+
+  **No change for AWS deployments.** With no `S3_*` variable set, the factory
+  returns what it always did: region only, ambient credential chain.
+
 ## 0.4.2
 
 ### Patch Changes
