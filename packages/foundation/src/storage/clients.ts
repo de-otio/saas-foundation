@@ -61,8 +61,15 @@ function resolveS3Credentials(
   const accessKeyId = source["S3_ACCESS_KEY_ID"];
   const secretAccessKey = source["S3_SECRET_ACCESS_KEY"];
 
-  if (!accessKeyId && !secretAccessKey) return undefined;
-  if (!accessKeyId || !secretAccessKey) {
+  // Explicit rather than truthiness-tested: an unset key in a container
+  // manifest commonly arrives as `""`, and "" must count as absent, not as a
+  // credential. This is the same absent-vs-present distinction the whole
+  // module is about.
+  const hasAccessKeyId = accessKeyId !== undefined && accessKeyId !== "";
+  const hasSecretAccessKey = secretAccessKey !== undefined && secretAccessKey !== "";
+
+  if (!hasAccessKeyId && !hasSecretAccessKey) return undefined;
+  if (!hasAccessKeyId || !hasSecretAccessKey) {
     throw new Error(
       "S3 credentials are half-configured: set BOTH S3_ACCESS_KEY_ID and " +
         "S3_SECRET_ACCESS_KEY, or neither (to use the ambient credential chain).",

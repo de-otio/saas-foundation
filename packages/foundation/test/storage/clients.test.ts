@@ -21,7 +21,7 @@ import { describe, expect, it } from "vitest";
 
 import { createDefaultS3Client } from "../../src/storage/clients.js";
 
-const empty = {} as NodeJS.ProcessEnv;
+const empty = {};
 
 describe("createDefaultS3Client", () => {
   it("returns an S3Client instance", () => {
@@ -36,7 +36,7 @@ describe("createDefaultS3Client", () => {
 
     it("falls back to AWS_REGION", async () => {
       const client = createDefaultS3Client({
-        source: { AWS_REGION: "eu-west-3" } as NodeJS.ProcessEnv,
+        source: { AWS_REGION: "eu-west-3" },
       });
       await expect(client.config.region()).resolves.toBe("eu-west-3");
     });
@@ -44,7 +44,7 @@ describe("createDefaultS3Client", () => {
     it("lets an explicit override win over AWS_REGION", async () => {
       const client = createDefaultS3Client({
         region: "eu-central-1",
-        source: { AWS_REGION: "eu-west-3" } as NodeJS.ProcessEnv,
+        source: { AWS_REGION: "eu-west-3" },
       });
       await expect(client.config.region()).resolves.toBe("eu-central-1");
     });
@@ -56,7 +56,7 @@ describe("createDefaultS3Client", () => {
         source: {
           S3_ACCESS_KEY_ID: "storage-principal",
           S3_SECRET_ACCESS_KEY: "storage-secret",
-        } as NodeJS.ProcessEnv,
+        },
       });
 
       const resolved = await client.config.credentials();
@@ -73,7 +73,7 @@ describe("createDefaultS3Client", () => {
           AWS_REGION: "eu-central-1",
           AWS_ACCESS_KEY_ID: "queue-principal",
           AWS_SECRET_ACCESS_KEY: "queue-secret",
-        } as NodeJS.ProcessEnv,
+        },
       });
 
       // `source` is injected, so the SDK's own env chain (real process.env) is
@@ -89,7 +89,7 @@ describe("createDefaultS3Client", () => {
       // Falling back to the ambient chain here would sign as the wrong
       // principal and surface as a 403 — indistinguishable from a genuine
       // permissions problem. Fail at construction, where the cause is nameable.
-      expect(() => createDefaultS3Client({ source: source as NodeJS.ProcessEnv })).toThrow(
+      expect(() => createDefaultS3Client({ source: source })).toThrow(
         /half-configured/i,
       );
     });
@@ -98,7 +98,7 @@ describe("createDefaultS3Client", () => {
       // An unset key in a container manifest commonly arrives as "".
       expect(() =>
         createDefaultS3Client({
-          source: { S3_ACCESS_KEY_ID: "k", S3_SECRET_ACCESS_KEY: "" } as NodeJS.ProcessEnv,
+          source: { S3_ACCESS_KEY_ID: "k", S3_SECRET_ACCESS_KEY: "" },
         }),
       ).toThrow(/half-configured/i);
     });
@@ -113,7 +113,7 @@ describe("createDefaultS3Client", () => {
 
     it("enables path style on the exact string 'true'", () => {
       const client = createDefaultS3Client({
-        source: { S3_FORCE_PATH_STYLE: "true" } as NodeJS.ProcessEnv,
+        source: { S3_FORCE_PATH_STYLE: "true" },
       });
       expect(client.config.forcePathStyle).toBe(true);
     });
@@ -124,7 +124,7 @@ describe("createDefaultS3Client", () => {
         // Addressing style changes the URL shape; a stray value must not flip
         // it silently.
         const client = createDefaultS3Client({
-          source: { S3_FORCE_PATH_STYLE: raw } as NodeJS.ProcessEnv,
+          source: { S3_FORCE_PATH_STYLE: raw },
         });
         expect(client.config.forcePathStyle).toBeFalsy();
       },
@@ -134,7 +134,7 @@ describe("createDefaultS3Client", () => {
   describe("AWS default is unchanged", () => {
     it("pins nothing beyond region when no S3_* variable is set", async () => {
       const client = createDefaultS3Client({
-        source: { AWS_REGION: "us-east-1" } as NodeJS.ProcessEnv,
+        source: { AWS_REGION: "us-east-1" },
       });
 
       expect(client.config.forcePathStyle).toBeFalsy();
