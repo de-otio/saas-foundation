@@ -42,7 +42,7 @@
   },
   "peerDependencies": {
     "aws-cdk-lib": "^2.260.0",
-    "cdk-nag": "^2.0.0",
+    "cdk-nag": "^3.0.1",
     "constructs": "^10.0.0"
   },
   "devDependencies": {
@@ -51,7 +51,7 @@
     "@types/adm-zip": "^0.5.7",
     "@types/node": "^25.0.0",
     "aws-cdk-lib": "^2.260.0",
-    "cdk-nag": "^2.0.0",
+    "cdk-nag": "^3.0.1",
     "constructs": "^10.0.0",
     "esbuild": "0.28.1"
   },
