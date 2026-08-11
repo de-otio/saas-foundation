@@ -1,5 +1,70 @@
 # @de-otio/vestibulum
 
+## 0.5.0
+
+### Minor Changes
+
+- 4a8cdff: Require an explicit `jwksUri` for generic (non-Cognito) OIDC issuers, and carry
+  the underlying failure as `cause`.
+
+  `JwtVerifier`'s default JWKS location is `${issuer}/.well-known/jwks.json` — the
+  **Cognito** convention. Keycloak (and most other providers) publish at
+  `/protocol/openid-connect/certs`, so for a generic issuer the derived URL 404s.
+  A JWKS that cannot be fetched means the signing key is never found, and that maps
+  to `invalid_signature` — so a plain URL misconfiguration presents as "every token
+  is cryptographically invalid". The symptom points at crypto; the cause is config.
+
+  This was not hypothetical: it took a live dev API down for the entire Keycloak
+  cutover on 2026-08-02. Every token was rejected, and the error sent debugging to
+  the wrong layer. The package's own tests never caught it because each generic
+  test already passed an explicit `jwksUri` — the suite supplied exactly what
+  production omitted.
+
+  **Breaking for generic issuers.** `createIssuerVerifier` now throws at
+  construction when the resolved issuer kind is `"generic"` and `jwksUri` is
+  absent, naming the issuer's `.well-known/openid-configuration` so the fix is
+  one lookup away. Cognito issuers are unaffected — the derived default is correct
+  there and remains optional. Consumers on a generic issuer must pass `jwksUri`
+  (read `jwks_uri` from the discovery document); the inferred-kind path is covered
+  too, since that is the one production actually took.
+
+  `VestibulumRuntimeError` and `IssuerVerifierError` also accept an optional
+  `{ cause }`, and the verifier now attaches the originating error when it maps a
+  JWKS fetch/kid failure onto `invalid_signature`. The caller-visible `code` and
+  `message` are deliberately unchanged — narrowing them per cause would hand an
+  attacker an oracle separating "bad signature" from "JWKS unreachable" — but an
+  operator reading the error chain now sees the 404 and the URL that produced it.
+
+- 12f7bae: Add an optional JWKS stale-key fallback to `IssuerVerifier`.
+
+  A pod that cold-starts while the IdP is unreachable cannot fetch JWKS, so every
+  authenticated request fails until the IdP returns. This matters most when the
+  app and the IdP share a failure domain — co-located on one cluster, for
+  instance, where a cluster event restarts both at once.
+
+  `IssuerVerifierConfig` gains an optional `jwksFallback` field taking a small
+  injectable store port (`get`/`set`). On a successful fetch the last-good JWKS is
+  persisted; when a fetch fails, verification falls back to that copy within a
+  bounded staleness window (7 days by default, tunable via
+  `maxStalenessSeconds`). Every fallback use emits an alertable warning.
+
+  The cached value is treated as untrusted input: it is re-parsed with the
+  prototype-pollution-safe parser and re-validated for envelope version, issuer,
+  JWKS URI, timestamp sanity, staleness, JWKS shape, and the presence of at least
+  one usable signing key. Any failure is a cache miss and the original fetch error
+  is rethrown. A successful fetch always wins over cache, and the fetched bytes
+  are returned unmodified so the library's own parser stays authoritative.
+
+  **Backward compatible.** With no `jwksFallback` configured, `build()` calls
+  `JwtVerifier.create(props)` with the identical single argument as before — no
+  store is constructed and no I/O happens. Consumers that pass nothing are
+  unaffected.
+
+  Note that serving stale keys widens the revocation window: if the IdP rotates
+  keys because a signing key leaked, an unreachable-IdP pod keeps honouring the
+  old `kid` until the staleness bound expires. That is the inherent trade; it is
+  bounded, per-issuer, logged on every use, and tunable per environment.
+
 ## 0.4.0
 
 ### Minor Changes
