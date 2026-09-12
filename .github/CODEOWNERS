@@ -1,0 +1,66 @@
+# CODEOWNERS for de-otio/saas-foundation — task D3.
+#
+# Copied from dot-work/scripts/CODEOWNERS.template; only the repo-specific
+# block at the bottom differs. A per-repo variation in the agent control plane
+# is exactly the thing the daily posture check exists to notice.
+#
+# ---------------------------------------------------------------------------
+# WHAT THIS IS AND IS NOT, TODAY
+# ---------------------------------------------------------------------------
+# The rulesets do NOT require code-owner review, because the org has one filled
+# seat: catch-all CODEOWNERS + required code-owner review + bypass_actors:[] +
+# one human = human-authored pull requests become unmergeable, and the fix
+# reached for under deadline pressure is a bypass actor. See dot-work
+# rulesets/README.md, "The N=1 policy". So this file DEFINES ownership and does
+# not yet REQUIRE anything — committed now so that turning the requirement on
+# later is one setting rather than an archaeology exercise, and so the daily
+# assertion has something to assert.
+#
+# ---------------------------------------------------------------------------
+# THREE THINGS THAT MUST NOT CHANGE
+# ---------------------------------------------------------------------------
+#
+# 1. THE CATCH-ALL IS THE FIRST RULE. Later rules win in CODEOWNERS. A
+#    catch-all placed anywhere else is overridden by everything above it, and an
+#    absent catch-all means unlisted paths have no owner at all — which is how
+#    a bot-authored pull request touching an unowned path passes a code-owner
+#    requirement (finding S5).
+#
+# 2. NO `<slug>[bot]` ANYWHERE IN THIS FILE. A bot is a different GitHub
+#    principal from its operator, so a bot code owner lets one human plus their
+#    own agent satisfy review. There is no server-side prevention; the daily
+#    check asserts the absence and D6d detects bot approvals after the fact.
+#
+# 3. THE OWNER MUST BE A HANDLE GITHUB RESOLVES. An unrecognised owner makes
+#    the rule silently never match. `@de-otio/founders` (created 2026-09-12)
+#    resolves in CODEOWNERS ONLY if the team has explicit write access to this
+#    repository, even when every member already has it by another route.
+#    Nothing asserts that the owner resolves; the grant is the control.
+
+# --- catch-all: first rule, always ----------------------------------------
+*                       @de-otio/founders
+
+# --- agent control plane (finding S10) ------------------------------------
+# Not documentation. A synced file that adds an MCP server or a
+# postCreateCommand changes what every agent in the org may do. Also diffed by
+# D6f against a founder-approved baseline.
+/.mcp.json              @de-otio/founders
+/.claude/               @de-otio/founders
+/.devcontainer/         @de-otio/founders
+/.vscode/               @de-otio/founders
+/AGENTS.md              @de-otio/founders
+
+# --- CI and the gate plane ------------------------------------------------
+# `.github/**` owns the workflow files D6e asserts against. A change here is a
+# change to what CI proves, which is a change to what a merge means.
+/.github/               @de-otio/founders
+
+# ===========================================================================
+# REPO-SPECIFIC BLOCK — de-otio/saas-foundation. Kept short on purpose: a path-scoped
+# owner that is always the same as the catch-all adds latency and no review.
+# Source: dot-work/scripts/CODEOWNERS.template (task D3).
+# ===========================================================================
+/packages/foundation-cdk/   @de-otio/founders
+/packages/vestibulum-cdk/   @de-otio/founders
+/SECURITY.md            @de-otio/founders
+/LICENSE                @de-otio/founders
