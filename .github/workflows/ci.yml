@@ -134,3 +134,52 @@ jobs:
       # allow-list (and would therefore ship silently uncovered).
       - name: Coverage-include check (vestibulum-cdk)
         run: npx tsx scripts/ci/check-coverage-include.ts
+
+  # ===========================================================================
+  # The `ci-required` aggregating job — see dot-work
+  # `scripts/ci-required-template.yml` for the six rules. In short: it keeps
+  # the repo's required-check list stable while the matrix above it changes,
+  # `if: always()` so it reports even when a need fails, and `success`/`skipped`
+  # pass while everything else fails closed.
+  #
+  # This job is the context named in the `byo-full-public` ruleset. Do not
+  # rename it, and do not put a `paths:` filter under `on:` in this workflow:
+  # a skipped WORKFLOW reports nothing and every pull request hangs forever on
+  # "Expected — waiting for status" with no error anywhere.
+  #
+  # `CodeQL` is not here and cannot be: it comes from a separate workflow, so
+  # it cannot be a `needs:` of a job in this one.
+  # ===========================================================================
+  ci-required:
+    name: ci-required
+    if: always()
+    needs:
+      - build-and-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Verify every CI job succeeded or was skipped
+        env:
+          RESULTS: >-
+            build-and-test=${{ needs.build-and-test.result }}
+        run: |
+          set -euo pipefail
+          echo "results: $RESULTS"
+          failed=0
+          for pair in $RESULTS; do
+            job="${pair%%=*}"
+            result="${pair#*=}"
+            case "$result" in
+              success|skipped) echo "ok       $job: $result" ;;
+              *) echo "FAILED   $job: ${result:-<no result — is it still in this workflow?>}"; failed=1 ;;
+            esac
+          done
+          if [ "$failed" -ne 0 ]; then
+            echo
+            echo "ci-required: at least one CI job did not succeed. Fail closed."
+            exit 1
+          fi
+          echo
+          echo "ci-required: all CI jobs succeeded or were skipped."
