@@ -9,6 +9,11 @@ on:
   push:
     branches: [main]
 
+# Least privilege for the default token: the org default must not be
+# load-bearing for this workflow (dot-work posture check d6base).
+permissions:
+  contents: read
+
 # Don't waste runner minutes on superseded runs. A new push to the same PR
 # cancels the PR's in-progress run (the common case: iterating on a branch,
 # or Dependabot force-pushing a rebase). Pushes to main are NOT cancelled —
