@@ -194,8 +194,9 @@ export class SesEmailIdentity extends Construct {
       // No hosted zone: emit every required record as a CfnOutput so an
       // operator can create them by hand in their DNS provider.
       for (let i = 1; i <= 3; i++) {
-        const name = this.identity[`dkimDnsTokenName${i}` as keyof ses.EmailIdentity] as string;
-        const value = this.identity[`dkimDnsTokenValue${i}` as keyof ses.EmailIdentity] as string;
+        const n = i as 1 | 2 | 3;
+        const name = this.identity[`dkimDnsTokenName${n}`];
+        const value = this.identity[`dkimDnsTokenValue${n}`];
         new cdk.CfnOutput(this, `DkimRecord${i}`, {
           description: `SES Easy DKIM CNAME #${i} — create in DNS: name -> value`,
           value: `${name} CNAME ${value}`,

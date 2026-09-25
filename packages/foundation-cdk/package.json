@@ -61,8 +61,9 @@
   "devDependencies": {
     "@types/node": "^26.6.1",
     "aws-cdk-lib": "^2.269.0",
+    "cdk-nag": "^2.0.0",
     "constructs": "^10.8.1",
-    "cdk-nag": "^2.0.0"
+    "esbuild": "0.28.2"
   },
   "publishConfig": {
     "access": "public"
