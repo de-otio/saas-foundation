@@ -11,15 +11,27 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { NodejsLambda, NodejsLambdaPropsError } from "../../lib/nodejs-lambda/nodejs-lambda.js";
 import { buildPrismaCommandHooks } from "../../lib/nodejs-lambda/prisma-bundling.js";
 
+import { SYNTH_WARM_UP_TIMEOUT_MS, unbundledApp, warmUpSynth } from "./cdk-test-support.js";
+
 const __filename = url.fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const HANDLER_ENTRY = path.join(__dirname, "fixtures/handler.ts");
 const TEST_ENV = { account: "123456789012", region: "eu-west-1" };
 
-function makeStack(name: string): cdk.Stack {
-  const app = new cdk.App();
+/**
+ * Most suites here only check the synthesized template, so they skip esbuild
+ * bundling (see cdk-test-support.ts). Pass `{ bundle: true }` for a test that
+ * needs a real bundle.
+ */
+function makeStack(name: string, opts: { bundle?: boolean } = {}): cdk.Stack {
+  const app = opts.bundle === true ? new cdk.App() : unbundledApp();
   return new cdk.Stack(app, name, { env: TEST_ENV, stackName: name });
 }
+
+// The worker's first synth is slow no matter what the stack contains. Run it
+// here, with its own timeout, so the "default props" beforeAll below keeps the
+// normal 5 s limit (see cdk-test-support.ts).
+beforeAll(warmUpSynth, SYNTH_WARM_UP_TIMEOUT_MS);
 
 describe("NodejsLambda", () => {
   describe("default props", () => {
@@ -380,7 +392,10 @@ describe("NodejsLambda", () => {
       // The constructed bundling block is not directly accessible from
       // the synthesized template (esbuild externals don't surface), so
       // verify by re-running the same logic the construct uses.
-      const stack = makeStack("NodejsLambdaExternalStack");
+      // This test bundles for real: what it checks is that esbuild accepts
+      // the merged external list, and a stack that skips bundling would
+      // never call esbuild.
+      const stack = makeStack("NodejsLambdaExternalStack", { bundle: true });
       const fn = new NodejsLambda(stack, "Fn", {
         entry: HANDLER_ENTRY,
         functionName: "fn-external",
