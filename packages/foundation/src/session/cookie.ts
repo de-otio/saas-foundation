@@ -233,7 +233,7 @@ export function parseCookieHeader(
   if (header === null || header === undefined || header.length === 0) {
     return Object.freeze({});
   }
-  const parsed = cookieLib.parse(header);
+  const parsed = cookieLib.parseCookie(header);
   const result: Record<string, string> = {};
   for (const [name, value] of Object.entries(parsed)) {
     // cookie@1.x marks values as possibly-undefined; copy only defined.
@@ -257,20 +257,22 @@ export function serializeSetCookie(
   const secure = attributes?.secure ?? true;
   const sameSite = attributes?.sameSite ?? "lax";
   const path = attributes?.path ?? "/";
-  const options: cookieLib.SerializeOptions = {
+  const setCookie: cookieLib.SetCookie = {
+    name,
+    value,
     httpOnly,
     secure,
     sameSite,
     path,
   };
   if (attributes?.domain !== undefined) {
-    options.domain = attributes.domain;
+    setCookie.domain = attributes.domain;
   }
   if (attributes?.maxAge !== undefined) {
-    options.maxAge = attributes.maxAge;
+    setCookie.maxAge = attributes.maxAge;
   }
   if (attributes?.expires !== undefined) {
-    options.expires = attributes.expires;
+    setCookie.expires = attributes.expires;
   }
-  return cookieLib.serialize(name, value, options);
+  return cookieLib.stringifySetCookie(setCookie);
 }
