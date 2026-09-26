@@ -29,18 +29,25 @@ import * as url from "node:url";
 import * as cdk from "aws-cdk-lib";
 import { Aspects } from "aws-cdk-lib";
 import { AwsSolutionsChecks, NagSuppressions } from "cdk-nag";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import { NodejsLambda } from "../../lib/nodejs-lambda/nodejs-lambda.js";
+
+import { SYNTH_WARM_UP_TIMEOUT_MS, unbundledApp, warmUpSynth } from "./cdk-test-support.js";
 
 const __filename = url.fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const HANDLER_ENTRY = path.join(__dirname, "fixtures/handler.ts");
 const TEST_ENV = { account: "123456789012", region: "eu-west-1" };
 
+// Run the worker's slow first synth before the test (see cdk-test-support.ts).
+beforeAll(warmUpSynth, SYNTH_WARM_UP_TIMEOUT_MS);
+
 describe("NodejsLambda cdk-nag snapshot", () => {
   it("produces the expected nag findings for a default NodejsLambda", () => {
-    const app = new cdk.App();
+    // cdk-nag checks resource properties, not bundle contents, so bundling is
+    // skipped (see cdk-test-support.ts).
+    const app = unbundledApp();
     const stack = new cdk.Stack(app, "NodejsLambdaNagStack", {
       env: TEST_ENV,
       stackName: "NodejsLambdaNagStack",

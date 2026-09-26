@@ -5,19 +5,25 @@ import * as cdk from "aws-cdk-lib";
 import { Match, Template } from "aws-cdk-lib/assertions";
 import * as sns from "aws-cdk-lib/aws-sns";
 import * as sqs from "aws-cdk-lib/aws-sqs";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import { NodejsLambda } from "../../lib/nodejs-lambda/nodejs-lambda.js";
+
+import { SYNTH_WARM_UP_TIMEOUT_MS, unbundledApp, warmUpSynth } from "./cdk-test-support.js";
 
 const __filename = url.fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const HANDLER_ENTRY = path.join(__dirname, "fixtures/handler.ts");
 const TEST_ENV = { account: "123456789012", region: "eu-west-1" };
 
+// These tests only check the alarm resources, so they skip esbuild bundling
+// (see cdk-test-support.ts).
 function makeStack(name: string): cdk.Stack {
-  const app = new cdk.App();
-  return new cdk.Stack(app, name, { env: TEST_ENV, stackName: name });
+  return new cdk.Stack(unbundledApp(), name, { env: TEST_ENV, stackName: name });
 }
+
+// Run the worker's slow first synth before any test (see cdk-test-support.ts).
+beforeAll(warmUpSynth, SYNTH_WARM_UP_TIMEOUT_MS);
 
 describe("NodejsLambda#addQueueIteratorAgeAlarm", () => {
   it("creates an IteratorAge alarm with the default 5-minute threshold", () => {
