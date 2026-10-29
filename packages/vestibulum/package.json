@@ -37,7 +37,7 @@
     "@aws-sdk/client-ses": "^3.1134.0",
     "@xmldom/xmldom": "^0.9.12",
     "aws-jwt-verify": "^5.0.0",
-    "undici": "^8.10.2",
+    "undici": "^8.12.3",
     "xml-crypto": "^6.2.0",
     "zod": "^4.6.5"
   },
