@@ -157,7 +157,7 @@ describe("installCostDosGuard (helper)", () => {
     });
   });
 
-  it("self-defence handler is ARM64 / NodeJS 22.x / minimum memory", () => {
+  it("self-defence handler is ARM64 / NodeJS 24.x / minimum memory", () => {
     const stack = makeStack("GuardLambdaShapeStack");
     installCostDosGuard(stack, {
       sesIdentityName: "example.com",
@@ -167,7 +167,7 @@ describe("installCostDosGuard (helper)", () => {
     });
     Template.fromStack(stack).hasResourceProperties("AWS::Lambda::Function", {
       Description: Match.stringLikeRegexp("cost-DoS guard"),
-      Runtime: "nodejs22.x",
+      Runtime: "nodejs24.x",
       Architectures: ["arm64"],
       MemorySize: 128,
       ReservedConcurrentExecutions: 1,

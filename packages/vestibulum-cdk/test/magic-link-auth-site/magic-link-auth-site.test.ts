@@ -149,7 +149,7 @@ describe("MagicLinkAuthSite", () => {
       template.hasResourceProperties("AWS::Lambda::Function", {
         Description: Match.stringLikeRegexp("Vestibulum auth-verify"),
         ReservedConcurrentExecutions: 20,
-        Runtime: "nodejs22.x",
+        Runtime: "nodejs24.x",
       });
     });
 
@@ -167,7 +167,7 @@ describe("MagicLinkAuthSite", () => {
       template.hasResourceProperties("AWS::Lambda::Function", {
         Description: Match.stringLikeRegexp("Vestibulum auth-signout"),
         ReservedConcurrentExecutions: 5,
-        Runtime: "nodejs22.x",
+        Runtime: "nodejs24.x",
         Timeout: 10,
         MemorySize: 256,
       });
@@ -192,10 +192,12 @@ describe("MagicLinkAuthSite", () => {
         .map((r) => r.Properties as { Action: string; Principal: string })
         .filter((p) => p.Principal === "cloudfront.amazonaws.com");
       const actions = cfPerms.map((p) => p.Action);
-      // One InvokeFunctionUrl + one InvokeFunction per auth Function URL.
-      // Three auth Function URLs now: auth-verify, auth-signout, auth-login.
+      // At least one InvokeFunctionUrl + one InvokeFunction per auth Function URL
+      // (auth-verify, auth-signout, auth-login). aws-cdk-lib >= 2.275 adds its own
+      // conditioned InvokeFunction grant in addition to the construct's explicit
+      // one, so there are two per function until the explicit one is removed.
       expect(actions.filter((a) => a === "lambda:InvokeFunctionUrl").length).toBeGreaterThanOrEqual(3);
-      expect(actions.filter((a) => a === "lambda:InvokeFunction").length).toBe(3);
+      expect(actions.filter((a) => a === "lambda:InvokeFunction").length).toBeGreaterThanOrEqual(3);
     });
 
     it("scopes the InvokeFunction grants to this distribution via SourceArn", () => {
@@ -325,7 +327,7 @@ describe("MagicLinkAuthSite", () => {
     it("creates the AuthLoginFn with auth-verify-style timeout/memory/runtime", () => {
       template.hasResourceProperties("AWS::Lambda::Function", {
         Description: Match.stringLikeRegexp("Vestibulum auth-login"),
-        Runtime: "nodejs22.x",
+        Runtime: "nodejs24.x",
         Timeout: 10,
         MemorySize: 256,
         ReservedConcurrentExecutions: 20,
@@ -379,14 +381,19 @@ describe("MagicLinkAuthSite", () => {
       const perms = template.findResources("AWS::Lambda::Permission");
       const cfPerms = Object.values(perms)
         .map((r) => r.Properties as { Action: string; Principal: string; SourceArn?: unknown });
-      // Three InvokeFunction grants now: auth-verify, auth-signout, auth-login.
       const invoke = cfPerms.filter(
         (p) => p.Principal === "cloudfront.amazonaws.com" && p.Action === "lambda:InvokeFunction",
       );
-      expect(invoke.length).toBe(3);
+      expect(invoke.length).toBeGreaterThanOrEqual(3);
       for (const p of invoke) {
         expect(p.SourceArn, "InvokeFunction SourceArn").toBeTruthy();
       }
+      // aws-cdk-lib's own grant is restricted to calls made through the Function URL.
+      const viaUrl = Object.values(perms).filter(
+        (r) =>
+          (r.Properties as { InvokedViaFunctionUrl?: boolean }).InvokedViaFunctionUrl === true,
+      );
+      expect(viaUrl.length).toBeGreaterThanOrEqual(3);
     });
   });
 

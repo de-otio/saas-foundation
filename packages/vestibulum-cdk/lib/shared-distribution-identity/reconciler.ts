@@ -74,7 +74,7 @@ export class Reconciler extends Construct {
     // Lambda function
     // -------------------------------------------------------------------------
     const reconcilerFn = new lambda.Function(this, 'Fn', {
-      runtime: lambda.Runtime.NODEJS_22_X,
+      runtime: lambda.Runtime.NODEJS_24_X,
       code: lambda.Code.fromAsset(resolveBundlePath('reconciler')),
       handler: 'index.handler',
       logRetention: logs.RetentionDays.ONE_MONTH,

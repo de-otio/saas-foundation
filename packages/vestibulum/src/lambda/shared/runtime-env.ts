@@ -101,6 +101,35 @@ export const RuntimeEnv = {
    * consumer's security policy.
    */
   BOUNCE_HMAC_SECRET: "VESTIBULUM_BOUNCE_HMAC_SECRET",
+
+  /**
+   * DynamoDB table holding one row per pending sign-in request, keyed by
+   * `SHA-256(binding secret)` and holding the Cognito `Session` server-side
+   * (`signin_link_bound_to_requesting_browser`). Written by auth-login, taken
+   * (atomically deleted) by auth-verify.
+   */
+  BINDING_TABLE_NAME: "VESTIBULUM_BINDING_TABLE",
+
+  /**
+   * Minimum response time of `/auth-login` in milliseconds
+   * (`signin_request_indistinguishable`). Must exceed the p99 of the slowest
+   * path; default 1500.
+   */
+  SIGNIN_FLOOR_MS: "VESTIBULUM_SIGNIN_FLOOR_MS",
+
+  /**
+   * Minimum duration of a CreateAuthChallenge invocation in milliseconds, so
+   * callers that hit Cognito directly see the same latency whether or not a
+   * mail was sent. Default 400.
+   */
+  CREATE_FLOOR_MS: "VESTIBULUM_CREATE_FLOOR_MS",
+
+  /**
+   * SES configuration set applied to every magic-link send. Its event
+   * destination feeds the bounce topic, so bounces and complaints reach the
+   * bounce-handler. Unset in tests.
+   */
+  SES_CONFIGURATION_SET: "VESTIBULUM_SES_CONFIGURATION_SET",
 } as const;
 
 /** Union of all known runtime environment variable names. */

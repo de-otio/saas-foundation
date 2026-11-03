@@ -22,6 +22,7 @@ import {
   ConditionalCheckFailedException,
 } from "@aws-sdk/client-dynamodb";
 import { RuntimeEnv } from "../../shared/runtime-env.js";
+import { TTL_ATTRIBUTE } from "../../shared/signin.js";
 
 /**
  * Cognito PreSignUp trigger sources. The trigger fires for self-signup
@@ -117,7 +118,7 @@ async function checkAndIncrementRateLimit(
         ConditionExpression: "attribute_not_exists(#count) OR #count < :limit",
         ExpressionAttributeNames: {
           "#count": "count",
-          "#ttl": "ttl",
+          "#ttl": TTL_ATTRIBUTE,
         },
         ExpressionAttributeValues: {
           ":zero": { N: "0" },

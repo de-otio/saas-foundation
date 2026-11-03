@@ -64,14 +64,14 @@ describe("MagicLinkIdentity — default props", () => {
     template.resourceCountIs("AWS::Lambda::Function", 11);
   });
 
-  it("pins runtime to nodejs22.x on the trigger Lambdas", () => {
+  it("pins runtime to nodejs24.x on the trigger Lambdas", () => {
     template.hasResourceProperties("AWS::Lambda::Function", {
-      Runtime: "nodejs22.x",
+      Runtime: "nodejs24.x",
     });
   });
 
-  it("creates three DynamoDB tables", () => {
-    template.resourceCountIs("AWS::DynamoDB::Table", 3);
+  it("creates four DynamoDB tables", () => {
+    template.resourceCountIs("AWS::DynamoDB::Table", 4);
   });
 
   it("retains the user pool on stack deletion", () => {
@@ -410,7 +410,7 @@ describe("MagicLinkIdentity — costDosGuard (S7)", () => {
     template.resourceCountIs("AWS::Lambda::Function", 12);
 
     template.hasResourceProperties("AWS::Lambda::Function", {
-      Runtime: "nodejs22.x",
+      Runtime: "nodejs24.x",
       Architectures: ["arm64"],
       MemorySize: 128,
       ReservedConcurrentExecutions: 1,

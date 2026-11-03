@@ -27,3 +27,34 @@ body {
     transform: rotate(360deg);
   }
 }
+
+.spinner[hidden],
+.confirm[hidden] {
+  display: none;
+}
+.confirm {
+  max-width: 24rem;
+  margin: 20vh auto 0;
+  text-align: center;
+}
+.confirm button {
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  color: #fff;
+  background: #333;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.confirm button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.message {
+  max-width: 24rem;
+  margin: 20vh auto 0;
+  text-align: center;
+}
+.message:empty {
+  display: none;
+}

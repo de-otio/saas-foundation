@@ -63,6 +63,14 @@ export interface IMagicLinkIdentity {
   readonly rateLimitTable: dynamodb.ITable;
   /** DynamoDB table holding the bounce/complaint denylist. */
   readonly denylistTable: dynamodb.ITable;
+  /**
+   * DynamoDB table of pending sign-in requests keyed by `SHA-256(binding
+   * secret)`. Holds the Cognito `Session` server-side; auth-login writes it,
+   * auth-verify takes it.
+   */
+  readonly bindingTable: dynamodb.ITable;
+  /** Link lifetime in minutes (3–15); the binding row and cookie follow it. */
+  readonly tokenTtlMinutes: number;
   /** SNS topic receiving SES bounce/complaint notifications. */
   readonly bounceTopic: sns.ITopic;
   /** Optional consumer-supplied PreTokenGeneration Lambda. */

@@ -9,18 +9,24 @@
  *      issued solely to keep enumeration parity with normal sends.
  *   4. If the session already contains a failed challenge, refuse — one
  *      failure ends the session permanently.
- *   5. Look up the token row in DynamoDB by `SHA-256(submitted_token)`.
+ *   5. COMPARE FIRST: constant-time compare the `token_hash` private param
+ *      (this session's own hash) against the hash of the submitted token. A
+ *      mismatch fails here, before the store is touched, so a valid link
+ *      presented against another session is NOT burned
+ *      (`signin_link_single_use`, 01-evidence #17).
+ *   6. Look up the token row in DynamoDB by `SHA-256(submitted_token)`.
  *      Missing row → `answerCorrect: false`.
- *   6. Cross-check the row's `email_hmac` against an HMAC of the email in
+ *   7. Cross-check the row's `email_hmac` against an HMAC of the email in
  *      `privateChallengeParameters` — defends against using a token issued
  *      for user A as a different user.
- *   7. Single-use enforcement: a single `DeleteItem` with
+ *   8. Enforce expiry: the row's `expires_at` (epoch seconds) must be in the
+ *      future. A missing or malformed `expires_at` fails closed. The table's
+ *      DynamoDB TTL is cleanup only (`signin_link_expires_10min`).
+ *   9. CONSUME LAST: single-use enforcement via a single `DeleteItem` with
  *      `ConditionExpression: 'attribute_exists(token_hash)'`. A failed
  *      condition means a concurrent request already consumed it; that race
  *      loser returns `false` exactly like a missing row.
- *   8. Constant-time compare the `token_hash` private param against the
- *      hash we computed for the submitted token.
- *   9. Respond `answerCorrect: true`.
+ *  10. Respond `answerCorrect: true`.
  *
  * Logging: regional CloudWatch only. Never logs the raw token. The email
  * address (which we have in the private params, not derived from the token)
@@ -37,6 +43,7 @@ import { createHash, timingSafeEqual } from "crypto";
 
 import { hmacEmail, resolveEmailHmacKeyFromEnv } from "../../shared/email-hmac.js";
 import { RuntimeEnv } from "../../shared/runtime-env.js";
+import { MAX_ANSWER_LENGTH, TTL_ATTRIBUTE } from "../../shared/signin.js";
 import { GENERIC_AUTH_ERROR } from "./errors.js";
 
 /** Minimal Cognito `VerifyAuthChallengeResponse` event shape. */
@@ -71,6 +78,8 @@ export interface VerifyAuthChallengeHandlerDeps {
    * email cross-check. Injected in tests.
    */
   readonly resolveHmacKey?: () => Promise<string>;
+  /** Clock for the expiry check. Defaults to `Date.now()`. Injected in tests. */
+  readonly nowMs?: () => number;
 }
 
 function hmacEmailForLogs(email: string | undefined, hmacKey: string): string {
@@ -179,17 +188,34 @@ export function createVerifyAuthChallengeResponseHandler(
       }
     }
 
-    // -- 3. Validate submitted token shape --------------------------------------
+    // -- 3. Validate submitted answer shape (bounded length) ----------------------
     const submitted = event.request.challengeAnswer;
     if (typeof submitted !== "string" || submitted.length === 0) {
       return fail(event, "empty_answer", hmacKey, email);
     }
+    if (submitted.length > MAX_ANSWER_LENGTH) {
+      return fail(event, "bad_answer", hmacKey, email);
+    }
 
     const submittedHash = sha256Hex(submitted);
+
+    // -- 4. COMPARE FIRST ----------------------------------------------------------
+    // The session's own `token_hash` (written by CreateAuthChallenge into the
+    // private parameters) must equal the hash of what was submitted. This runs
+    // before any store access so a token that belongs to a DIFFERENT session
+    // fails without being consumed: the real owner can still redeem it.
+    if (
+      expectedHash === undefined ||
+      expectedHash === "" ||
+      !constantTimeHashEqual(expectedHash, submittedHash)
+    ) {
+      return fail(event, "hash_mismatch", hmacKey, email);
+    }
+
     const tokenTable = requiredEnv(RuntimeEnv.TOKEN_TABLE_NAME);
     const dynamodb = getDynamoClient();
 
-    // -- 4. Look up the token row by its hash -----------------------------------
+    // -- 5. Look up the token row by its hash -----------------------------------
     const lookup = await dynamodb.send(
       new GetItemCommand({
         TableName: tokenTable,
@@ -201,7 +227,7 @@ export function createVerifyAuthChallengeResponseHandler(
       return fail(event, "no_such_token", hmacKey, email);
     }
 
-    // -- 5. Email cross-check ---------------------------------------------------
+    // -- 6. Email cross-check ---------------------------------------------------
     const storedEmailHmac = lookup.Item.email_hmac?.S ?? "";
     const expectedEmailHmac =
       hmacKey === "" || email === undefined || email === "" ? "" : hmacEmail(email, hmacKey);
@@ -214,7 +240,17 @@ export function createVerifyAuthChallengeResponseHandler(
       return fail(event, "email_mismatch", hmacKey, email);
     }
 
-    // -- 6. Single-use enforcement via conditional DeleteItem ------------------
+    // -- 7. Expiry (the table TTL is cleanup only) ---------------------------------
+    // `expires_at` is epoch seconds. Missing / non-numeric fails closed. A row
+    // written by an older release (attribute `ttl`) therefore fails too — the
+    // link was issued before the upgrade and the user simply requests a new one.
+    const expiresAtSeconds = Number(lookup.Item[TTL_ATTRIBUTE]?.N);
+    const nowMs = (deps.nowMs ?? Date.now)();
+    if (!Number.isFinite(expiresAtSeconds) || nowMs >= expiresAtSeconds * 1000) {
+      return fail(event, "expired", hmacKey, email);
+    }
+
+    // -- 8. CONSUME LAST: single-use via conditional DeleteItem -----------------
     try {
       await dynamodb.send(
         new DeleteItemCommand({
@@ -236,15 +272,6 @@ export function createVerifyAuthChallengeResponseHandler(
         }),
       );
       return fail(event, "delete_error", hmacKey, email);
-    }
-
-    // -- 7. Constant-time compare of the issued hash to the submitted hash ----
-    if (
-      expectedHash === undefined ||
-      expectedHash === "" ||
-      !constantTimeHashEqual(expectedHash, submittedHash)
-    ) {
-      return fail(event, "hash_mismatch", hmacKey, email);
     }
 
     event.response.answerCorrect = true;

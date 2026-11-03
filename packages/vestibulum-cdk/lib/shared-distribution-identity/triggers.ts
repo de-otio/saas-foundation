@@ -132,7 +132,7 @@ export class SharedDistributionTriggers extends Construct {
     };
 
     const commonLambdaProps: Omit<lambda.FunctionProps, "code" | "handler"> = {
-      runtime: lambda.Runtime.NODEJS_22_X,
+      runtime: lambda.Runtime.NODEJS_24_X,
       logRetention: logs.RetentionDays.ONE_MONTH,
       reservedConcurrentExecutions: 10,
       timeout: Duration.seconds(10),

@@ -11,6 +11,7 @@ import {
 const DEFAULT_INPUT_BASE = {
   defaultIdTokenValidity: DEFAULT_ID_TOKEN_VALIDITY,
   defaultRefreshTokenValidity: DEFAULT_REFRESH_TOKEN_VALIDITY,
+  tokenTtlMinutes: 10,
 };
 
 describe("app-clients", () => {
@@ -52,6 +53,29 @@ describe("app-clients", () => {
   });
 
   describe("buildAppClientOptions", () => {
+    // signin_link_expires_10min: the client's AuthSessionValidity IS the link
+    // lifetime. Cognito's own default is 3 minutes, which silently cuts a link
+    // the mail promises for longer.
+    it.each([3, 10, 15])("sets authSessionValidity to the link lifetime (%i min)", (n) => {
+      const options = buildAppClientOptions({
+        ...DEFAULT_INPUT_BASE,
+        tokenTtlMinutes: n,
+        federationEnabled: false,
+        props: {},
+      });
+      expect(options.authSessionValidity?.toMinutes()).toBe(n);
+    });
+
+    it("does not let a consumer override authSessionValidity", () => {
+      const options = buildAppClientOptions({
+        ...DEFAULT_INPUT_BASE,
+        tokenTtlMinutes: 5,
+        federationEnabled: false,
+        props: { authSessionValidity: Duration.minutes(15) },
+      });
+      expect(options.authSessionValidity?.toMinutes()).toBe(5);
+    });
+
     it("throws when generateSecret: true", () => {
       expect(() =>
         buildAppClientOptions({

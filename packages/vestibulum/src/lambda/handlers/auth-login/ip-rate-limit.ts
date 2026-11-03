@@ -22,6 +22,8 @@ import {
 } from "@aws-sdk/client-dynamodb";
 import { createHash } from "crypto";
 
+import { TTL_ATTRIBUTE } from "../../shared/signin.js";
+
 /** Default rate-limit window (15 minutes, in milliseconds). */
 export const IP_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
 
@@ -75,7 +77,8 @@ export async function tryConsumeIpRateLimit(opts: IpRateLimitOptions): Promise<b
         ExpressionAttributeNames: {
           "#c": "count",
           "#ws": "window_start",
-          "#ttl": "ttl",
+          // The attribute the RateLimitTable's TTL names (cleanup only).
+          "#ttl": TTL_ATTRIBUTE,
         },
         ExpressionAttributeValues: {
           ":zero": { N: "0" },

@@ -19,6 +19,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mockClient } from "aws-sdk-client-mock";
 import { createHash } from "crypto";
 import {
+  type AttributeValue,
   DeleteItemCommand,
   DynamoDBClient,
   GetItemCommand,
@@ -79,6 +80,18 @@ function writtenEmailHmac(): string | undefined {
   return input.Item?.email_hmac?.S;
 }
 
+/**
+ * The whole item Create wrote, replayed verbatim into Verify's lookup. Replaying
+ * the real item (not a hand-built one) is what makes this an AGREEMENT test: if
+ * Create and Verify disagreed on an attribute name — as they did for the expiry
+ * (`ttl` written, `expires_at` read) — it fails here.
+ */
+function writtenItem(): Record<string, AttributeValue> {
+  const call = ddbMock.commandCalls(PutItemCommand)[0];
+  const input = call?.args[0].input as { Item?: Record<string, AttributeValue> };
+  return input.Item ?? {};
+}
+
 describe("create→verify email_hmac agreement", () => {
   beforeEach(() => {
     ddbMock.reset();
@@ -99,6 +112,7 @@ describe("create→verify email_hmac agreement", () => {
       dynamodb: ddbMock as unknown as DynamoDBClient,
       ses: sesMock as unknown as SESClient,
       nowMs: () => NOW_MS,
+      sleep: () => Promise.resolve(), // hold no real response floor in tests
       randomToken: () => TOKEN_BYTES,
       resolveHmacKey: () => Promise.resolve(KEY),
     });
@@ -112,10 +126,7 @@ describe("create→verify email_hmac agreement", () => {
 
     // Replay the issued token row into the verify-side lookup.
     ddbMock.on(GetItemCommand).resolves({
-      Item: {
-        token_hash: { S: SUBMITTED_HASH },
-        email_hmac: { S: storedEmailHmac! },
-      },
+      Item: writtenItem(),
     });
     ddbMock.on(DeleteItemCommand).resolves({});
 
@@ -123,6 +134,8 @@ describe("create→verify email_hmac agreement", () => {
       dynamodb: ddbMock as unknown as DynamoDBClient,
       // Same key the create-side used — the crux of the fix.
       resolveHmacKey: () => Promise.resolve(KEY),
+      // Verify now enforces expiry, so it must share the clock Create used.
+      nowMs: () => NOW_MS,
     });
 
     const verifyEvent: VerifyAuthChallengeEvent = {
@@ -150,6 +163,7 @@ describe("create→verify email_hmac agreement", () => {
       dynamodb: ddbMock as unknown as DynamoDBClient,
       ses: sesMock as unknown as SESClient,
       nowMs: () => NOW_MS,
+      sleep: () => Promise.resolve(), // hold no real response floor in tests
       randomToken: () => TOKEN_BYTES,
       resolveHmacKey: () => Promise.resolve(KEY),
     });
@@ -160,14 +174,14 @@ describe("create→verify email_hmac agreement", () => {
     expect(storedEmailHmac).toBeDefined();
 
     ddbMock.on(GetItemCommand).resolves({
-      Item: {
-        token_hash: { S: SUBMITTED_HASH },
-        email_hmac: { S: storedEmailHmac! },
-      },
+      Item: writtenItem(),
     });
     ddbMock.on(DeleteItemCommand).resolves({});
 
     const verify = createVerifyAuthChallengeResponseHandler({
+      // Verify enforces expiry, so it must share the clock Create used;
+      // otherwise every case below would fail as "expired", masking its real reason.
+      nowMs: () => NOW_MS,
       dynamodb: ddbMock as unknown as DynamoDBClient,
       resolveHmacKey: () => Promise.resolve(KEY),
     });
@@ -198,22 +212,22 @@ describe("create→verify email_hmac agreement", () => {
       dynamodb: ddbMock as unknown as DynamoDBClient,
       ses: sesMock as unknown as SESClient,
       nowMs: () => NOW_MS,
+      sleep: () => Promise.resolve(), // hold no real response floor in tests
       randomToken: () => TOKEN_BYTES,
       resolveHmacKey: () => Promise.resolve(KEY),
     });
 
     await create(createEvent(EMAIL));
-    const storedEmailHmac = writtenEmailHmac();
 
     ddbMock.on(GetItemCommand).resolves({
-      Item: {
-        token_hash: { S: SUBMITTED_HASH },
-        email_hmac: { S: storedEmailHmac! },
-      },
+      Item: writtenItem(),
     });
     ddbMock.on(DeleteItemCommand).resolves({});
 
     const verify = createVerifyAuthChallengeResponseHandler({
+      // Verify enforces expiry, so it must share the clock Create used;
+      // otherwise every case below would fail as "expired", masking its real reason.
+      nowMs: () => NOW_MS,
       dynamodb: ddbMock as unknown as DynamoDBClient,
       // Wrong key — this is precisely what the ARN-vs-value bug caused: the two
       // sides keying on different material, so verification could never agree.

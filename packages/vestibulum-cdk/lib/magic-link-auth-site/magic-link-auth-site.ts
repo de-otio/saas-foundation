@@ -57,6 +57,11 @@ import { markWafIntentionallyDisabled } from "../aspects/waf-required.js";
 import { resolveMetricsNamespace, resolveResourceNamePrefix } from "../_internal/branding.js";
 import type { IEdgeResources } from "../_internal/edge-handle.js";
 import type { IMagicLinkIdentity } from "../_internal/identity-handle.js";
+import {
+  DEFAULT_SIGNIN_FLOOR_MS,
+  MAX_SIGNIN_FLOOR_MS,
+  MIN_SIGNIN_FLOOR_MS,
+} from "../_internal/signin-constants.js";
 import { packageRootFrom } from "../_internal/package-root.js";
 import { RuntimeEnv } from "../_internal/runtime-env.js";
 import {
@@ -189,6 +194,20 @@ export interface MagicLinkAuthSiteProps {
    * Reserved-concurrency overrides for the auth Lambda functions.
    */
   readonly reservedConcurrency?: AuthLambdaConcurrencyProps;
+
+  /**
+   * Minimum time `/auth-login` takes to answer, in milliseconds, whatever the
+   * caller class. It exists so a caller cannot tell an eligible address from an
+   * unknown or rate-limited one by response time, so it MUST exceed the p99 of
+   * the eligible path (SignUp + InitiateAuth + the Create trigger's SES send).
+   * Measure it in each stage; an eligible path slower than the floor is an
+   * enumeration oracle. Each in-flight request holds a Lambda slot for at least
+   * this long, so it also bounds `reservedConcurrency.authLogin` throughput.
+   *
+   * Integer from 500 to 6000.
+   * @default 2500
+   */
+  readonly signInFloorMs?: number;
   /**
    * Override the CloudWatch metric namespace. Per S-C12.
    * @default `'Vestibulum/AuthSite'`
@@ -316,7 +335,7 @@ export class MagicLinkAuthSite extends Construct {
     const authVerifyFn = new lambda.Function(this, "AuthVerifyFn", {
       code: lambda.Code.fromAsset(bundlePaths["auth-verify"]),
       handler: "index.handler",
-      runtime: lambda.Runtime.NODEJS_22_X,
+      runtime: lambda.Runtime.NODEJS_24_X,
       // The success path calls Cognito RespondToAuthChallenge, which cascades
       // synchronously through the VerifyAuthChallengeResponse + PreTokenGeneration
       // triggers; with the 3s Lambda default plus a cold start this overruns and
@@ -331,6 +350,7 @@ export class MagicLinkAuthSite extends Construct {
         [RuntimeEnv.COGNITO_USER_POOL_ID]: identity.cognitoPool.userPoolId,
         [RuntimeEnv.COGNITO_CLIENT_ID]: this.websiteClient.userPoolClientId,
         [RuntimeEnv.DOMAIN]: domain,
+        [RuntimeEnv.BINDING_TABLE_NAME]: identity.bindingTable.tableName,
         [RuntimeEnv.METRICS_NAMESPACE]: metricsNamespace,
       },
     });
@@ -340,8 +360,10 @@ export class MagicLinkAuthSite extends Construct {
         resources: [identity.cognitoPool.userPoolArn],
       }),
     );
-    identity.tokenTable.grantReadWriteData(authVerifyFn);
-    identity.denylistTable.grantReadData(authVerifyFn);
+    // Least privilege: auth-verify only TAKES a pending binding (conditional
+    // DeleteItem, ReturnValues ALL_OLD). It no longer touches the token table
+    // (Verify trigger consumes tokens) or the denylist (Create reads it).
+    identity.bindingTable.grant(authVerifyFn, "dynamodb:DeleteItem");
 
     // -------------------------------------------------------------------
     // auth-signout Lambda.
@@ -350,7 +372,7 @@ export class MagicLinkAuthSite extends Construct {
     const authSignoutFn = new lambda.Function(this, "AuthSignoutFn", {
       code: lambda.Code.fromAsset(bundlePaths["auth-signout"]),
       handler: "index.handler",
-      runtime: lambda.Runtime.NODEJS_22_X,
+      runtime: lambda.Runtime.NODEJS_24_X,
       // Calls Cognito GlobalSignOut over the network; give the same headroom as
       // auth-verify so a cold start + Cognito latency doesn't hit the 3s default.
       timeout: Duration.seconds(10),
@@ -365,9 +387,14 @@ export class MagicLinkAuthSite extends Construct {
         [RuntimeEnv.METRICS_NAMESPACE]: metricsNamespace,
       },
     });
+    // The handler calls AdminUserGlobalSignOut for the user in the VERIFIED ID
+    // token. The grant used to be `cognito-idp:GlobalSignOut` — a different
+    // action (it takes an access token) — so every revocation was AccessDenied
+    // and the error was swallowed. The action here must equal the SDK command
+    // the code sends (test: signin/iam-sdk-agreement).
     authSignoutFn.addToRolePolicy(
       new iam.PolicyStatement({
-        actions: ["cognito-idp:GlobalSignOut"],
+        actions: ["cognito-idp:AdminUserGlobalSignOut"],
         resources: [identity.cognitoPool.userPoolArn],
       }),
     );
@@ -380,11 +407,22 @@ export class MagicLinkAuthSite extends Construct {
     // calls Cognito SignUp + InitiateAuth and reads/writes the shared
     // per-IP rate-limit DynamoDB table (S-C9 cost-DoS envelope).
     // -------------------------------------------------------------------
+    const signInFloorMs = props.signInFloorMs ?? DEFAULT_SIGNIN_FLOOR_MS;
+    if (
+      !Number.isInteger(signInFloorMs) ||
+      signInFloorMs < MIN_SIGNIN_FLOOR_MS ||
+      signInFloorMs > MAX_SIGNIN_FLOOR_MS
+    ) {
+      throw new Error(
+        `[vestibulum-cdk:MagicLinkAuthSite] signInFloorMs must be an integer from ` +
+          `${MIN_SIGNIN_FLOOR_MS} to ${MAX_SIGNIN_FLOOR_MS}; got ${String(props.signInFloorMs)}.`,
+      );
+    }
     const authLoginConcurrency = props.reservedConcurrency?.authLogin ?? 20;
     const authLoginFn = new lambda.Function(this, "AuthLoginFn", {
       code: lambda.Code.fromAsset(bundlePaths["auth-login"]),
       handler: "index.handler",
-      runtime: lambda.Runtime.NODEJS_22_X,
+      runtime: lambda.Runtime.NODEJS_24_X,
       // Same Cognito-cascade headroom as auth-verify: SignUp / InitiateAuth
       // over the network plus a cold start overruns the 3s/128MB defaults.
       timeout: Duration.seconds(10),
@@ -396,6 +434,10 @@ export class MagicLinkAuthSite extends Construct {
         [RuntimeEnv.COGNITO_CLIENT_ID]: this.websiteClient.userPoolClientId,
         [RuntimeEnv.DOMAIN]: domain,
         [RuntimeEnv.RATE_LIMIT_TABLE_NAME]: identity.rateLimitTable.tableName,
+        [RuntimeEnv.BINDING_TABLE_NAME]: identity.bindingTable.tableName,
+        [RuntimeEnv.SIGNIN_FLOOR_MS]: String(signInFloorMs),
+        // Binding row and cookie lifetime follow the link lifetime.
+        [RuntimeEnv.TOKEN_TTL_MINUTES]: String(identity.tokenTtlMinutes),
         // LOGIN_IP_PER_WINDOW: per-IP login attempts per rate-limit window.
         // The constant is added to RuntimeEnv by the concurrent vestibulum
         // change; referenced here per the shared contract.
@@ -410,6 +452,8 @@ export class MagicLinkAuthSite extends Construct {
       }),
     );
     identity.rateLimitTable.grantReadWriteData(authLoginFn);
+    // auth-login only CREATES a pending binding.
+    identity.bindingTable.grant(authLoginFn, "dynamodb:PutItem");
 
     // -------------------------------------------------------------------
     // Function URLs — authType AWS_IAM (required for OAC).
@@ -518,7 +562,7 @@ export class MagicLinkAuthSite extends Construct {
     );
 
     const checkAuthBaker = new lambda.Function(this, "CheckAuthConfigBakerFn", {
-      runtime: lambda.Runtime.NODEJS_22_X,
+      runtime: lambda.Runtime.NODEJS_24_X,
       handler: "index.handler",
       code: lambda.Code.fromAsset(bakerStageDir),
       timeout: Duration.minutes(3),
@@ -891,8 +935,13 @@ export class MagicLinkAuthSite extends Construct {
 
     // OAC POST support. CloudFront OAC for a Lambda Function URL requires the
     // CloudFront service principal to hold BOTH `lambda:InvokeFunctionUrl`
-    // (added by `FunctionUrlOrigin.withOriginAccessControl`) AND
-    // `lambda:InvokeFunction`. Without the latter, a correctly-signed POST is
+    // AND `lambda:InvokeFunction`. aws-cdk-lib >= 2.275 adds both from
+    // `FunctionUrlOrigin.withOriginAccessControl` (the second with
+    // `InvokedViaFunctionUrl: true`); the explicit grants below predate that and
+    // are now redundant — and broader, because they carry no such condition.
+    // They are kept so this change does not alter the deployed policy before a
+    // live OAC POST has confirmed the conditioned grant alone is enough
+    // (TODO: remove once verified in dev). Without the latter, a correctly-signed POST is
     // rejected at the Function URL auth layer with `403 Forbidden` and the
     // handler never runs — so the browser sign-in POST to `/auth-verify` (and a
     // POST sign-out to `/auth-signout`) cannot complete. Both grants are scoped

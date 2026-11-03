@@ -27,6 +27,8 @@ export class MockIdentity extends Construct implements IMagicLinkIdentity {
   public readonly tokenTable: dynamodb.ITable;
   public readonly rateLimitTable: dynamodb.ITable;
   public readonly denylistTable: dynamodb.ITable;
+  public readonly bindingTable: dynamodb.ITable;
+  public readonly tokenTtlMinutes: number = 10;
   public readonly bounceTopic: sns.ITopic;
   public readonly preTokenGeneration: undefined = undefined;
   public readonly postConfirmation: undefined = undefined;
@@ -61,6 +63,11 @@ export class MockIdentity extends Construct implements IMagicLinkIdentity {
         name: "emailHash",
         type: dynamodb.AttributeType.STRING,
       },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: RemovalPolicy.DESTROY,
+    }) as unknown as dynamodb.ITable;
+    this.bindingTable = new dynamodb.Table(this, "BindingTable", {
+      partitionKey: { name: "binding_hash", type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: RemovalPolicy.DESTROY,
     }) as unknown as dynamodb.ITable;

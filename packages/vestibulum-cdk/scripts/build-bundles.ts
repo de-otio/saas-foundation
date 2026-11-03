@@ -164,10 +164,11 @@ export async function buildBundle(
     ...COMMON_BUILD_OPTIONS,
     entryPoints: [entryPath],
     outfile: outFile,
-    // node22 everywhere: the Lambda@Edge check-auth runtime is NODEJS_22_X
-    // (its inlined undici needs the Node 22.5+ worker_threads.markAsUncloneable),
-    // so build the edge bundle for node22 too, matching the regional bundles.
-    target: "node22",
+    // Regional functions run NODEJS_24_X. The Lambda@Edge check-auth runtime is
+    // NODEJS_22_X (its inlined undici needs the Node 22.5+
+    // worker_threads.markAsUncloneable) and Lambda@Edge Node 24 support is not
+    // confirmed, so the edge bundle targets node22.
+    target: spec.edge ? "node22" : "node24",
     external: [...(spec.edge ? EDGE_EXTERNAL : REGIONAL_EXTERNAL)],
     ...(spec.edge ? { drop: ["console"] as ("console" | "debugger")[] } : {}),
     // The wrappers import `@de-otio/vestibulum`; esbuild resolves that

@@ -54,6 +54,14 @@ export interface BuildAppClientOptionsInput {
   readonly defaultRefreshTokenValidity: Duration;
 
   /**
+   * Link lifetime in minutes (`MagicLinkIdentity.tokenTtlMinutes`). Applied as
+   * the client's `AuthSessionValidity`, which is how long Cognito keeps a
+   * CUSTOM_AUTH session answerable. It is never left to Cognito's own default
+   * (3 minutes), which would cut a link the mail promises for longer.
+   */
+  readonly tokenTtlMinutes: number;
+
+  /**
    * Consumer-supplied `UserPoolClientOptions`. The `generateSecret: true`
    * value is rejected; all other options are passed through, with safe
    * defaults applied where the consumer did not supply overrides.
@@ -149,6 +157,8 @@ export function buildAppClientOptions(
     generateSecret: false,
     idTokenValidity: props.idTokenValidity ?? input.defaultIdTokenValidity,
     refreshTokenValidity,
+    // Not overridable: it must equal the link lifetime (signin_link_expires_10min).
+    authSessionValidity: Duration.minutes(input.tokenTtlMinutes),
   };
 
   // Only set oAuth when it is defined to satisfy exactOptionalPropertyTypes.

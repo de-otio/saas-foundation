@@ -45,6 +45,7 @@ export default defineConfig({
         "lib/_internal/branding.ts",
         "lib/_internal/package-root.ts",
         "lib/_internal/runtime-env.ts",
+        "lib/_internal/signin-constants.ts",
         "lib/edge-resources/edge-resources.ts",
         "lib/edge-resources/cross-region.ts",
         "lib/edge-resources/waf-defaults.ts",

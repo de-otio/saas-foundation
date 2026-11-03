@@ -580,7 +580,7 @@ describe("SharedDistributionIdentity — costDosGuard (S7)", () => {
     const template = Template.fromStack(stack);
     expect(identity.costDosGuard?.selfDefenceHandler).toBeDefined();
     template.hasResourceProperties("AWS::Lambda::Function", {
-      Runtime: "nodejs22.x",
+      Runtime: "nodejs24.x",
       Architectures: ["arm64"],
       MemorySize: 128,
       Description: Match.stringLikeRegexp("cost-DoS guard"),
