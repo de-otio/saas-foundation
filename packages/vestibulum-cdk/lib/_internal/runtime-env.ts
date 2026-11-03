@@ -29,6 +29,8 @@ export const RuntimeEnv = {
   TOKEN_TTL_MINUTES: "VESTIBULUM_TOKEN_TTL_MINUTES",
   /** Max magic-link sends per email per rate-limit window. */
   TOKEN_SENDS_PER_WINDOW: "VESTIBULUM_TOKEN_SENDS_PER_WINDOW",
+  /** Max magic-link challenges per email per UTC day. */
+  TOKEN_SENDS_PER_DAY: "VESTIBULUM_TOKEN_SENDS_PER_DAY",
   /** Max sign-up attempts per email per rate-limit window. */
   SIGN_UPS_PER_WINDOW: "VESTIBULUM_SIGN_UPS_PER_WINDOW",
   /** Max `/auth-login` attempts per client IP per rate-limit window. */
@@ -47,6 +49,10 @@ export const RuntimeEnv = {
   CREATE_FLOOR_MS: "VESTIBULUM_CREATE_FLOOR_MS",
   /** SES configuration set whose event destination feeds the bounce topic. */
   SES_CONFIGURATION_SET: "VESTIBULUM_SES_CONFIGURATION_SET",
+  /** Enrolment mode (`'admin-only'` | `'self-signup'`). */
+  ENROLLMENT: "VESTIBULUM_ENROLLMENT",
+  /** Refresh-token validity in seconds (auth-signout's expired-ID-token window). */
+  REFRESH_TOKEN_VALIDITY_SECONDS: "VESTIBULUM_REFRESH_TOKEN_VALIDITY_SECONDS",
   /** CloudWatch metrics namespace used by the regional handlers. */
   METRICS_NAMESPACE: "VESTIBULUM_METRICS_NAMESPACE",
   /**

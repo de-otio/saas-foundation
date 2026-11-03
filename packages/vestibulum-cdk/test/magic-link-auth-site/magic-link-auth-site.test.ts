@@ -334,16 +334,17 @@ describe("MagicLinkAuthSite", () => {
       });
     });
 
-    it("grants AuthLoginFn the Cognito SignUp + InitiateAuth policy on the user pool", () => {
+    it("grants AuthLoginFn the Cognito ListUsers + InitiateAuth policy on the user pool (default admin-only: no SignUp)", () => {
       template.hasResourceProperties("AWS::IAM::Policy", {
         PolicyDocument: Match.objectLike({
           Statement: Match.arrayWith([
             Match.objectLike({
-              Action: Match.arrayWith(["cognito-idp:SignUp", "cognito-idp:InitiateAuth"]),
+              Action: ["cognito-idp:ListUsers", "cognito-idp:InitiateAuth"],
             }),
           ]),
         }),
       });
+      expect(JSON.stringify(template.toJSON())).not.toContain("cognito-idp:SignUp");
     });
 
     it("sets the rate-limit table env var on AuthLoginFn", () => {
@@ -989,12 +990,13 @@ describe("MagicLinkAuthSite", () => {
       });
     });
 
-    it("injects a second BucketDeployment source (the deploy-time login-config.json)", () => {
+    it("deploys ONLY the login-page asset: no login-config.json (nothing reads it, and it published the client id, region and domain)", () => {
       const deployments = template.findResources("Custom::CDKBucketDeployment");
       const deployment = Object.values(deployments)[0] as {
         Properties: { SourceObjectKeys: unknown[] };
       };
-      expect(deployment.Properties.SourceObjectKeys.length).toBe(2);
+      expect(deployment.Properties.SourceObjectKeys.length).toBe(1);
+      expect(JSON.stringify(template.toJSON())).not.toContain("login-config");
     });
   });
 

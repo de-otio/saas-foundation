@@ -385,3 +385,64 @@ export function validateSignupModeForFederation(input: {
  * Required when `federationEnabled: true`.
  */
 export type SignupMode = "open" | "admin-invite-only";
+
+/**
+ * How people get a Cognito user (`signin_no_self_signup`).
+ *
+ * - `'admin-only'` (default, spec-conformant): the pool has
+ *   `AllowAdminCreateUserOnly`, no code path calls `SignUp`, and mail goes only
+ *   to a user an administrator created with a verified email and who is still
+ *   enabled. The Create and Verify triggers consult the pool
+ *   (`cognito-idp:AdminGetUser`), `/auth-login` looks addresses up
+ *   (`cognito-idp:ListUsers`).
+ * - `'self-signup'` (legacy, opt-in): anyone whose address passes the
+ *   PreSignUp domain allow-list is signed up on the fly. A documented
+ *   deviation from the spec's I9.
+ */
+export type Enrollment = "admin-only" | "self-signup";
+
+/** Rejects anything that is not one of the two enrolment modes (JS callers). */
+export function validateEnrollment(value: unknown): Enrollment {
+  if (value === "admin-only" || value === "self-signup") return value;
+  throw new MagicLinkIdentityPropsError(
+    `[vestibulum-cdk:MagicLinkIdentity] enrollment must be 'admin-only' or ` +
+      `'self-signup'; got '${String(value)}'.`,
+  );
+}
+
+/**
+ * Validates `ses:Recipients` patterns: a non-empty list of non-empty strings.
+ *
+ * - **Allow patterns** must each contain an `@`: a bare `*` (or a bare domain)
+ *   would match every address, or none, and defeat the fence.
+ * - **Deny patterns** need no `@`: the spec's own example marker is a local-part
+ *   fragment, `*+e2e-*`. A broader Deny only ever refuses more mail.
+ *
+ * `ses:Recipients` matching is case-sensitive and the handlers mail only
+ * lower-case addresses, so write the patterns in lower case.
+ */
+export function validateRecipientPatterns(
+  propName: "allowedRecipientPatterns" | "deniedRecipientPatterns",
+  patterns: readonly string[],
+): readonly string[] {
+  const needsAt = propName === "allowedRecipientPatterns";
+  // Checked through an `unknown` alias: this guards JS callers, and narrowing
+  // `patterns` itself with `Array.isArray` would widen it to `any[]`.
+  const candidate: unknown = patterns;
+  if (!Array.isArray(candidate) || candidate.length === 0) {
+    throw new MagicLinkIdentityPropsError(
+      `[vestibulum-cdk:MagicLinkIdentity] ${propName} must be a non-empty list ` +
+        `when set (omit it to apply no ${needsAt ? "allow" : "deny"} fence).`,
+    );
+  }
+  for (const pattern of patterns) {
+    if (typeof pattern !== "string" || pattern === "" || (needsAt && !pattern.includes("@"))) {
+      throw new MagicLinkIdentityPropsError(
+        `[vestibulum-cdk:MagicLinkIdentity] every ${propName} entry must be a ` +
+          `non-empty string${needsAt ? " containing '@' (for example '*@example.com')" : ""}; got ` +
+          `'${String(pattern)}'.`,
+      );
+    }
+  }
+  return patterns;
+}

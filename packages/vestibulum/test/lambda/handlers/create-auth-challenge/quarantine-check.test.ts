@@ -12,9 +12,16 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { mockClient } from "aws-sdk-client-mock";
 import { createHash } from "crypto";
-import { DynamoDBClient, GetItemCommand } from "@aws-sdk/client-dynamodb";
+import {
+  DynamoDBClient,
+  GetItemCommand,
+  ResourceNotFoundException,
+} from "@aws-sdk/client-dynamodb";
 
-import { isDenylisted } from "../../../../src/lambda/handlers/create-auth-challenge/quarantine-check.js";
+import {
+  DenylistUnavailableError,
+  isDenylisted,
+} from "../../../../src/lambda/handlers/create-auth-challenge/quarantine-check.js";
 // Both the bounce-handler WRITE and the quarantine-check READ funnel through
 // this one canonical hmacEmail (shared module), so keys cannot drift.
 import { hmacEmail as sharedHmac } from "../../../../src/lambda/shared/email-hmac.js";
@@ -69,10 +76,36 @@ describe("isDenylisted (denylist read)", () => {
     expect(await isDenylisted(client, "Denylist", "a@b.com", KEY)).toBe(false);
   });
 
-  it("is disabled (no DDB call) when the table name is unset", async () => {
+  // signin_fails_closed (I15): a denylist that cannot be consulted is NOT an empty denylist.
+  it("fails closed (no DDB call) when the table name is unset or empty", async () => {
     const client = new DynamoDBClient({});
-    expect(await isDenylisted(client, undefined, "a@b.com", KEY)).toBe(false);
-    expect(await isDenylisted(client, "", "a@b.com", KEY)).toBe(false);
+    await expect(isDenylisted(client, undefined, "a@b.com", KEY)).rejects.toBeInstanceOf(
+      DenylistUnavailableError,
+    );
+    await expect(isDenylisted(client, "", "a@b.com", KEY)).rejects.toBeInstanceOf(
+      DenylistUnavailableError,
+    );
     expect(ddbMock.commandCalls(GetItemCommand)).toHaveLength(0);
+  });
+
+  it("fails closed when the table does not exist (ResourceNotFoundException)", async () => {
+    ddbMock
+      .on(GetItemCommand)
+      .rejects(new ResourceNotFoundException({ message: "gone", $metadata: {} }));
+    await expect(
+      isDenylisted(new DynamoDBClient({}), "Denylist", "a@b.com", KEY),
+    ).rejects.toBeInstanceOf(DenylistUnavailableError);
+  });
+
+  it("propagates any other error (the caller turns every one into 'unanswerable')", async () => {
+    ddbMock.on(GetItemCommand).rejects(new Error("throttled"));
+    await expect(isDenylisted(new DynamoDBClient({}), "Denylist", "a@b.com", KEY)).rejects.toThrow(
+      "throttled",
+    );
+  });
+
+  it("the unavailable error carries no table name, address or SDK text", () => {
+    const err = new DenylistUnavailableError();
+    expect(err.message).toBe("denylist unavailable");
   });
 });

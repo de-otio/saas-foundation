@@ -217,6 +217,22 @@ describe("single-tenant edge check-auth", () => {
     expect(isLoginRedirect(r)).toBe(true);
   });
 
+  // The ID-token cookie now lives as long as the refresh token, so a browser keeps
+  // sending an ID token long after it expired. The gate must refuse it by `exp`.
+  it.each([
+    ["just past the 60 s skew", 61],
+    ["12 hours old", 12 * 3600],
+    ["20 days old (inside a 30-day refresh window)", 20 * 86400],
+  ])("DENIES an authentic, correctly signed ID token that expired %s", async (_n, ageSeconds) => {
+    const exp = FIXED_NOW_SEC - ageSeconds;
+    const token = signIdJwt({
+      key: primary,
+      claims: { exp, nbf: exp - 900, iat: exp - 900 },
+    });
+    const r = await handler(makeEvent(`${COOKIE_NAME}=${token}`));
+    expect(isLoginRedirect(r)).toBe(true);
+  });
+
   it("DENIES a not-yet-valid token (nbf far in the future)", async () => {
     const future = FIXED_NOW_SEC + 7200;
     const token = signIdJwt({

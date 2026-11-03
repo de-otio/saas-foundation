@@ -46,6 +46,7 @@ import {
   clearBindingCookie,
   emitSigninMetric,
   hashBindingSecret,
+  parseRefreshTokenValiditySeconds,
   readCookie,
 } from "../../shared/signin.js";
 import { buildSetCookie } from "./cookie.js";
@@ -80,8 +81,6 @@ export interface LambdaFunctionUrlResult {
   body?: string;
 }
 
-/** ID-token cookie Max-Age in seconds (15 minutes). */
-const ID_TOKEN_MAX_AGE = 15 * 60;
 /** Refresh-token cookie Max-Age in seconds (24 hours). */
 const REFRESH_TOKEN_MAX_AGE = 24 * 60 * 60;
 
@@ -230,6 +229,20 @@ export function createAuthVerifyHandler(deps: AuthVerifyHandlerDeps = {}) {
       return authFailed();
     }
 
+    // The ID-token cookie lives as long as the refresh token, so `/auth-signout`
+    // (which sees only this cookie) can still revoke after the ID token has
+    // expired. Every consumer of the cookie checks `exp` itself (the edge
+    // check-auth gates and auth-signout, which relaxes it only for revocation),
+    // so a long-lived cookie holding an expired token never grants access. A
+    // malformed value fails closed: it must never silently widen the lifetime.
+    const idTokenMaxAge = parseRefreshTokenValiditySeconds(
+      process.env[RuntimeEnv.REFRESH_TOKEN_VALIDITY_SECONDS],
+    );
+    if (idTokenMaxAge === undefined) {
+      console.error("auth-verify: refresh-token validity invalid");
+      return authFailed();
+    }
+
     // ------------------------------------------------------------------
     // 3. Browser binding. No cookie → nothing is read, called or consumed.
     // ------------------------------------------------------------------
@@ -313,7 +326,7 @@ export function createAuthVerifyHandler(deps: AuthVerifyHandlerDeps = {}) {
       sameSite: "Lax",
       path: "/",
       domain,
-      maxAge: ID_TOKEN_MAX_AGE,
+      maxAge: idTokenMaxAge,
     });
 
     const setCookieHeaders: string[] = [idTokenCookie, clearBindingCookie()];

@@ -124,12 +124,32 @@ beforeEach(() => {
   process.env[RuntimeEnv.DOMAIN] = DOMAIN;
   process.env[RuntimeEnv.COGNITO_CLIENT_ID] = CLIENT_ID;
   process.env[RuntimeEnv.BINDING_TABLE_NAME] = BINDING_TABLE;
+  Reflect.deleteProperty(process.env, RuntimeEnv.REFRESH_TOKEN_VALIDITY_SECONDS);
   vi.spyOn(process.stdout, "write").mockImplementation(() => true);
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
   cognitoMock.reset();
+});
+
+describe("the 8-digit typed code (U16) passes the same validation as the link token", () => {
+  it.each([["43-char link token", "T".repeat(43)], ["8-digit code", "04271983"]])(
+    "a %s reaches Cognito as the ANSWER, unchanged",
+    async (_n, form) => {
+      const { secret } = pendingRequest("code1", { answer: form });
+      const res = await handler()(req(form, { cookie: secret }));
+      expect(res.statusCode).toBe(200);
+      expect(cognitoCalls()[0]!.args[0].input.ChallengeResponses?.["ANSWER"]).toBe(form);
+    },
+  );
+
+  it("is a string answer: a JSON number (a code with its leading zero lost) is refused before Cognito", async () => {
+    const { secret } = pendingRequest("code2", { answer: "04271983" });
+    const res = await handler()(req(4271983, { cookie: secret }));
+    expect(res.statusCode).toBe(401);
+    expect(cognitoCalls()).toHaveLength(0);
+  });
 });
 
 describe("redeem success", () => {
@@ -158,6 +178,47 @@ describe("redeem success", () => {
       const { secret, answer } = pendingRequest(`via-${via}`);
       const res = await handler()(req(answer, { cookie: secret, cookieVia: via }));
       expect(res.statusCode).toBe(200);
+    }
+  });
+});
+
+describe("the ID-token cookie lives as long as the refresh token (so sign-out can still revoke)", () => {
+  const idCookie = (res: { cookies?: string[] }) =>
+    (res.cookies ?? []).find((c) => c.startsWith("id-token="))!;
+
+  it("Max-Age is VESTIBULUM_REFRESH_TOKEN_VALIDITY_SECONDS", async () => {
+    process.env[RuntimeEnv.REFRESH_TOKEN_VALIDITY_SECONDS] = "86400";
+    const { secret, answer } = pendingRequest("m1");
+    const res = await handler()(req(answer, { cookie: secret }));
+    expect(res.statusCode).toBe(200);
+    expect(idCookie(res)).toContain("Max-Age=86400");
+  });
+
+  it("defaults to 30 days when unset (Cognito's own refresh default)", async () => {
+    const { secret, answer } = pendingRequest("m2");
+    const res = await handler()(req(answer, { cookie: secret }));
+    expect(idCookie(res)).toContain(`Max-Age=${30 * 86400}`);
+  });
+
+  it.each(["abc", "0", "-5", "1.5", "1e9", " 86400"])(
+    "a malformed value (%j) fails closed: 401, nothing consumed, Cognito never called, no cookie set",
+    async (bad) => {
+      process.env[RuntimeEnv.REFRESH_TOKEN_VALIDITY_SECONDS] = bad;
+      const { secret, answer } = pendingRequest("m3");
+      const res = await handler()(req(answer, { cookie: secret }));
+      expect(res.statusCode).toBe(401);
+      expect(cognitoCalls()).toHaveLength(0);
+      expect(store.count(BINDING_TABLE)).toBe(1);
+      expect((res.cookies ?? []).some((c) => c.startsWith("id-token="))).toBe(false);
+    },
+  );
+
+  it("is still HttpOnly, Secure, Path=/ (the attributes sign-out must match to clear it)", async () => {
+    const { secret, answer } = pendingRequest("m4");
+    const res = await handler()(req(answer, { cookie: secret }));
+    const c = idCookie(res);
+    for (const attr of ["HttpOnly", "Secure", "Path=/", `Domain=${DOMAIN}`, "SameSite=Lax"]) {
+      expect(c).toContain(attr);
     }
   });
 });

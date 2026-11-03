@@ -256,6 +256,152 @@ describe("login page", () => {
   });
 });
 
+describe("login page — the typed 8-digit code (U16 / I10)", () => {
+  const CODE = "04271983";
+
+  const requested = async () => {
+    const h = load("login", { respond: () => ({ status: 202, ok: true }) });
+    (h.$("email") as HTMLInputElement).value = "user@example.com";
+    h.$("login-form").dispatchEvent(new h.window.Event("submit", { bubbles: true, cancelable: true }));
+    await tick(30);
+    h.fetchCalls.length = 0; // from here on only what the CODE form sends
+    return h;
+  };
+  const enter = (h: Harness, value: string) => {
+    (h.$("code") as HTMLInputElement).value = value;
+    h.$("code-form").dispatchEvent(new h.window.Event("submit", { bubbles: true, cancelable: true }));
+  };
+
+  it("is hidden on load and stays hidden when the request was not accepted", async () => {
+    const h = load("login", { respond: () => ({ status: 500, ok: false }) });
+    expect(h.$("code-form").hidden).toBe(true);
+    (h.$("email") as HTMLInputElement).value = "user@example.com";
+    h.$("login-form").dispatchEvent(new h.window.Event("submit", { bubbles: true, cancelable: true }));
+    await tick(30);
+    expect(h.$("code-form").hidden).toBe(true);
+  });
+
+  it("appears after a 202, with a labelled numeric input", async () => {
+    const h = await requested();
+    expect(h.$("code-form").hidden).toBe(false);
+    const input = h.$("code") as HTMLInputElement;
+    expect(input.getAttribute("inputmode")).toBe("numeric");
+    expect(input.getAttribute("autocomplete")).toBe("one-time-code");
+    expect(h.window.document.querySelector('label[for="code"]')?.textContent).toMatch(/8-digit code/i);
+  });
+
+  it("sends NOTHING by itself: no request until the user submits the code", async () => {
+    const h = await requested();
+    await tick(150);
+    expect(h.fetchCalls).toHaveLength(0);
+    (h.$("code") as HTMLInputElement).value = CODE; // typing alone sends nothing either
+    await tick(50);
+    expect(h.fetchCalls).toHaveLength(0);
+  });
+
+  it("an explicit submit POSTs { answer: code } to /auth-verify, same-origin, with the payload hash", async () => {
+    const h = await requested();
+    enter(h, CODE);
+    await tick();
+    expect(h.fetchCalls).toHaveLength(1);
+    const { url, init } = h.fetchCalls[0]!;
+    expect(url).toBe("/auth-verify");
+    expect(init.method).toBe("POST");
+    expect(init.credentials).toBe("same-origin"); // the binding cookie goes with it
+    expect(init.headers["Content-Type"]).toBe("application/json");
+    expect(JSON.parse(init.body as string)).toEqual({ answer: CODE });
+    expect(init.headers["x-amz-content-sha256"]).toBe(sha256(init.body as string));
+  });
+
+  it.each([
+    ["1234 5678", "12345678"],
+    ["1234-5678", "12345678"],
+    ["  04271983 ", "04271983"],
+  ])("accepts the code as copied (%j -> %s)", async (typed, sent) => {
+    const h = await requested();
+    enter(h, typed);
+    await tick();
+    expect(JSON.parse(h.fetchCalls[0]!.init.body as string)).toEqual({ answer: sent });
+  });
+
+  it.each([[""], ["1234"], ["123456789"], ["abcdefgh"], ["1234567a"], ["١٢٣٤٥٦٧٨"]])(
+    "does not send %j: it is not 8 ASCII digits",
+    async (typed) => {
+      const h = await requested();
+      enter(h, typed);
+      await tick(30);
+      expect(h.fetchCalls).toHaveLength(0);
+      expect(h.$("error-message").textContent).toMatch(/8 digits/i);
+    },
+  );
+
+  it("on success it navigates to / (the callback page's success handling)", async () => {
+    const h = await requested();
+    enter(h, CODE);
+    await tick(50);
+    expect(h.jsdomErrors.join(" ")).toMatch(/navigation/i);
+  });
+
+  it.each([401, 403, 500])("status %i gets one generic message, no navigation, and asks for a new link", async (status) => {
+    const h = load("login", {
+      respond: (call) =>
+        call.url === "/auth-login" ? { status: 202, ok: true } : { status, ok: false },
+    });
+    (h.$("email") as HTMLInputElement).value = "user@example.com";
+    h.$("login-form").dispatchEvent(new h.window.Event("submit", { bubbles: true, cancelable: true }));
+    await tick(30);
+    enter(h, CODE);
+    await tick(50);
+    expect(h.$("error-message").textContent).toMatch(/did not work/i);
+    expect(h.$("error-message").textContent).toMatch(/new sign-in link/i);
+    expect(h.$("code-form").hidden).toBe(true);
+    expect((h.$("login-form").querySelector("button[type=submit]") as HTMLButtonElement).disabled).toBe(false);
+    expect((h.$("code") as HTMLInputElement).value).toBe("");
+    expect(h.jsdomErrors).toEqual([]);
+  });
+
+  it("a network failure is reported with the same generic message", async () => {
+    const h = await requested();
+    (h.window as unknown as Record<string, unknown>)["fetch"] = () => Promise.reject(new Error("offline"));
+    enter(h, CODE);
+    await tick(50);
+    expect(h.$("error-message").textContent).toMatch(/did not work/i);
+  });
+
+  it("a repeated submit while one is in flight sends only one request (one answer per request)", async () => {
+    const h = await requested();
+    enter(h, CODE);
+    enter(h, CODE);
+    enter(h, CODE);
+    await tick(50);
+    expect(h.fetchCalls).toHaveLength(1);
+  });
+
+  it("the code appears in no request URL or header — only the POST body — and in no storage or cookie", async () => {
+    const h = await requested();
+    enter(h, CODE);
+    await tick();
+    const { url, init } = h.fetchCalls[0]!;
+    expect(url).not.toContain(CODE);
+    expect(JSON.stringify(init.headers)).not.toContain(CODE);
+    expect(h.window.localStorage.length).toBe(0);
+    expect(h.window.sessionStorage.length).toBe(0);
+    expect(h.window.document.cookie).toBe("");
+  });
+
+  it("the form is plain markup the CSP allows: no inline script or handler", () => {
+    const html = read("login.html");
+    expect(html).not.toMatch(/<script(?![^>]*\bsrc=)/i);
+    expect(html).not.toMatch(/\son[a-z]+\s*=/i);
+  });
+});
+
+describe("no page reads a deploy-time config file", () => {
+  it.each(fs.readdirSync(PAGES))("%s", (f) => {
+    expect(read(f)).not.toMatch(/login-config|config\.json/);
+  });
+});
+
 describe("page scripts reference no client-side session store", () => {
   it.each(["login.js", "login-callback.js"])("%s never touches sessionStorage / localStorage", (f) => {
     const code = read(f).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");

@@ -23,6 +23,7 @@ import {
 } from "../../../../src/lambda/handlers/verify-auth-challenge/index.js";
 import { hmacEmail } from "../../../../src/lambda/shared/email-hmac.js";
 import { RuntimeEnv } from "../../../../src/lambda/shared/runtime-env.js";
+import { FakeAllowList } from "../../fakes/fake-allow-list.js";
 import { FakeDynamo } from "../../fakes/fake-dynamo.js";
 
 const TABLE = "tokens";
@@ -33,14 +34,20 @@ const TTL_S = 600;
 
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 
+const CODE = "12345678";
+const SUBJECT = "user-1";
+
 let store: FakeDynamo;
 let nowMs: number;
+/** The pool's users: SUBJECT is an enabled, verified user. */
+let allow: FakeAllowList;
 
 function handler() {
   return createVerifyAuthChallengeResponseHandler({
     dynamodb: store as unknown as DynamoDBClient,
     resolveHmacKey: () => Promise.resolve(HMAC_KEY),
     nowMs: () => nowMs,
+    allowList: allow,
   });
 }
 
@@ -49,6 +56,7 @@ function issue(token: string, opts: { expiresAtSeconds?: number | null; email?: 
   const email = opts.email ?? EMAIL;
   const row: Record<string, AttributeValue> = {
     token_hash: { S: sha256(token) },
+    code_hash: { S: sha256(CODE) },
     email_hmac: { S: hmacEmail(email, HMAC_KEY) },
     created_at: { N: String(T0_MS / 1000) },
   };
@@ -57,7 +65,7 @@ function issue(token: string, opts: { expiresAtSeconds?: number | null; email?: 
   }
   store.seed(TABLE, row);
   // privateChallengeParameters of THIS session.
-  return { token_hash: sha256(token), email, quarantined: "false" };
+  return { token_hash: sha256(token), code_hash: sha256(CODE), email, quarantined: "false" };
 }
 
 function event(
@@ -66,7 +74,7 @@ function event(
 ): VerifyAuthChallengeEvent {
   return {
     userPoolId: "eu-central-1_test",
-    userName: "user-1",
+    userName: SUBJECT,
     request: {
       userAttributes: { email: EMAIL },
       privateChallengeParameters: privateParams,
@@ -80,14 +88,17 @@ function event(
 beforeEach(() => {
   store = new FakeDynamo({ keys: { [TABLE]: "token_hash" } });
   nowMs = T0_MS;
+  allow = new FakeAllowList().add(SUBJECT, EMAIL);
   process.env[RuntimeEnv.TOKEN_TABLE_NAME] = TABLE;
+  Reflect.deleteProperty(process.env, RuntimeEnv.ENROLLMENT); // default: admin-only
 });
 
 describe("signin_link_single_use", () => {
   it("accepts the right token once; the second redemption fails", async () => {
-    const params = issue("token-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
-    const first = await handler()(event(params, "token-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
-    const second = await handler()(event(params, "token-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+    const token = "A".repeat(43);
+    const params = issue(token);
+    const first = await handler()(event(params, token));
+    const second = await handler()(event(params, token));
     expect(first.response.answerCorrect).toBe(true);
     expect(second.response.answerCorrect).toBe(false);
     expect(store.count(TABLE)).toBe(0);
@@ -186,7 +197,8 @@ describe("signin_answer_compare_constant_time", () => {
         const token = "q".repeat(43);
         const params = issue(token);
         const result = await handler()(event(params, answer));
-        expect(result.response.answerCorrect).toBe(answer === token);
+        // Exactly the two accepted forms (the link token, or this session's code).
+        expect(result.response.answerCorrect).toBe(answer === token || answer === CODE);
       }),
       { numRuns: 200 },
     );

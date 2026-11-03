@@ -27,3 +27,11 @@ export const DEFAULT_TOKEN_TTL_MINUTES = 10;
 export const DEFAULT_SIGNIN_FLOOR_MS = 2500;
 export const MIN_SIGNIN_FLOOR_MS = 500;
 export const MAX_SIGNIN_FLOOR_MS = 6000;
+
+/**
+ * CreateAuthChallenge response floor in milliseconds. UNMEASURED: it must be
+ * measured live against the real SES send path before it is relied on.
+ */
+export const DEFAULT_CREATE_FLOOR_MS = 400;
+export const MIN_CREATE_FLOOR_MS = 100;
+export const MAX_CREATE_FLOOR_MS = 5000;

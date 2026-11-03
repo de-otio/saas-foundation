@@ -8,8 +8,11 @@
  *
  * Shape:
  *   - PK `key` (`subdomain#<subdomain>` or `tenantId#<id>`).
- *   - TTL attribute `expiresAt` — 60-second window so a crashed admin
- *     Lambda doesn't leave the namespace permanently blocked.
+ *   - TTL attribute `expires_at` (the one name every vestibulum table uses;
+ *     `TTL_ATTRIBUTE`) — 60-second window so a crashed admin Lambda doesn't
+ *     leave the namespace permanently blocked. The handler compares it with the
+ *     clock (`attribute_not_exists OR expires_at < :now`); DynamoDB TTL deletion
+ *     is cleanup only.
  *   - Encryption AWS_MANAGED (short-lived, not sensitive — no
  *     customer-managed-KMS knob on this one).
  *
@@ -22,6 +25,8 @@ import { RemovalPolicy } from "aws-cdk-lib";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as iam from "aws-cdk-lib/aws-iam";
 import { Construct } from "constructs";
+
+import { TTL_ATTRIBUTE } from "../_internal/signin-constants.js";
 
 export class ReservationsTable extends Construct {
   /** The underlying CDK DDB table. */
@@ -39,7 +44,7 @@ export class ReservationsTable extends Construct {
       // Always AWS_MANAGED — short-lived rows, no customer-managed
       // KMS knob exposed.
       encryption: dynamodb.TableEncryption.AWS_MANAGED,
-      timeToLiveAttribute: "expiresAt",
+      timeToLiveAttribute: TTL_ATTRIBUTE,
       // PITR is overkill for a 60-second-TTL table; skip to save cost.
       removalPolicy: RemovalPolicy.RETAIN,
     });

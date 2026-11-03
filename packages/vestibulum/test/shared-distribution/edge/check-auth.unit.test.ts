@@ -191,6 +191,26 @@ describe('check-auth handler', () => {
     expect(r.status).toBe('403');
   });
 
+  // The ID-token cookie now lives as long as the refresh token: an authentic ID
+  // token that expired long ago must still be refused by `exp`.
+  it.each([
+    ['just past the 60 s skew', 61],
+    ['12 hours old', 12 * 3600],
+    ['20 days old', 20 * 86400],
+  ])('refuses an authentic, correctly signed ID token that expired %s', async (_n, age) => {
+    const exp = FIXED_NOW_SEC - age;
+    const token = signTestJwt(primary, { claims: { exp, nbf: exp - 900, iat: exp - 900 } });
+    const r = asResult(
+      await handler(
+        makeEvent({
+          host: 'acme.tenants.example.com',
+          cookie: `vestibulum_id_token=${token}`,
+        }),
+      ),
+    );
+    expect(r.status).toBe('403');
+  });
+
   it('refuses with wrong-iss for issuer mismatch', async () => {
     const token = signTestJwt(primary, {
       claims: { iss: 'https://attacker.example.com/p' },

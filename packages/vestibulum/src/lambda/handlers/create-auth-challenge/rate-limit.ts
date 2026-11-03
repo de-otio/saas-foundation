@@ -8,9 +8,11 @@
  * map that to the same generic challenge shape as a successful send (no
  * enumeration).
  *
- * The PK is `SHA-256(email#window_start_ms)` — both because raw addresses
- * never sit in PKs and because keying on the window start automatically
- * resets the bucket every window without a TTL daemon.
+ * The PK is `HMAC-SHA-256(secret, "window:" + email + "#" + window_start_ms)` —
+ * because raw addresses never sit in PKs, because a SECRET key (the same one
+ * `daily-cap.ts` uses) keeps a table snapshot from being brute-forced for
+ * addresses, and because keying on the window start automatically resets the
+ * bucket every window without a TTL daemon.
  */
 
 import {
@@ -18,7 +20,7 @@ import {
   DynamoDBClient,
   UpdateItemCommand,
 } from "@aws-sdk/client-dynamodb";
-import { createHash } from "crypto";
+import { createHmac } from "crypto";
 
 import { TTL_ATTRIBUTE } from "../../shared/signin.js";
 
@@ -32,6 +34,8 @@ export interface RateLimitOptions {
   readonly client: DynamoDBClient;
   readonly tableName: string;
   readonly email: string;
+  /** The shared secret that keys the bucket id (the email-HMAC key). */
+  readonly hmacKey: string;
   readonly limit: number;
   /** Override clock for tests. Defaults to Date.now(). */
   readonly nowMs?: number;
@@ -51,8 +55,8 @@ export async function tryConsumeRateLimit(opts: RateLimitOptions): Promise<boole
   const nowMs = opts.nowMs ?? Date.now();
   const windowStart = Math.floor(nowMs / windowMs) * windowMs;
 
-  const emailHash = createHash("sha256")
-    .update(`${opts.email.toLowerCase()}#${windowStart}`)
+  const emailHash = createHmac("sha256", opts.hmacKey)
+    .update(`window:${opts.email.toLowerCase()}#${windowStart}`)
     .digest("hex");
 
   // TTL = window end + 1 min (epoch seconds). DynamoDB TTL is best-effort, so

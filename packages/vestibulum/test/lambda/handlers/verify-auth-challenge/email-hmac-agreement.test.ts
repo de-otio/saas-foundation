@@ -36,6 +36,7 @@ import {
   type VerifyAuthChallengeEvent,
 } from "../../../../src/lambda/handlers/verify-auth-challenge/index.js";
 import { RuntimeEnv } from "../../../../src/lambda/shared/runtime-env.js";
+import { FakeAllowList } from "../../fakes/fake-allow-list.js";
 
 const ddbMock = mockClient(DynamoDBClient);
 const sesMock = mockClient(SESClient);
@@ -44,6 +45,11 @@ const KEY = "the-shared-pepper";
 const EMAIL = "User@Example.COM"; // mixed-case on purpose — hmacEmail lowercases
 const TOKEN_BYTES = Buffer.alloc(32, 7); // deterministic 32-byte token
 const NOW_MS = 1_700_000_000_000;
+/** Everyone used below is an enabled, verified pool user (the default admin-only allow-list). */
+const allowList = new FakeAllowList()
+  .add("User@Example.COM", "user@example.com")
+  .add("victim@example.com", "victim@example.com")
+  .add("attacker@example.com", "attacker@example.com");
 
 /** The base64url token the create-side derives from TOKEN_BYTES. */
 const TOKEN = TOKEN_BYTES.toString("base64url");
@@ -55,6 +61,8 @@ function setCreateEnv(): void {
   process.env[RuntimeEnv.RATE_LIMIT_TABLE_NAME] = "RateLimit";
   process.env[RuntimeEnv.SES_FROM] = "noreply@example.com";
   process.env[RuntimeEnv.DOMAIN] = "app.example.com";
+  // The denylist must be configured: an unset table fails closed (I15).
+  process.env[RuntimeEnv.DENYLIST_TABLE_NAME] = "Denylist";
 }
 
 function clearCreateEnv(): void {
@@ -62,6 +70,7 @@ function clearCreateEnv(): void {
   delete process.env["VESTIBULUM_RATE_LIMIT_TABLE"];
   delete process.env["VESTIBULUM_SES_FROM"];
   delete process.env["VESTIBULUM_DOMAIN"];
+  delete process.env["VESTIBULUM_DENYLIST_TABLE"];
 }
 
 function createEvent(email: string): CreateAuthChallengeEvent {
@@ -115,6 +124,7 @@ describe("create→verify email_hmac agreement", () => {
       sleep: () => Promise.resolve(), // hold no real response floor in tests
       randomToken: () => TOKEN_BYTES,
       resolveHmacKey: () => Promise.resolve(KEY),
+      allowList,
     });
 
     const issued = await create(createEvent(EMAIL));
@@ -136,6 +146,7 @@ describe("create→verify email_hmac agreement", () => {
       resolveHmacKey: () => Promise.resolve(KEY),
       // Verify now enforces expiry, so it must share the clock Create used.
       nowMs: () => NOW_MS,
+      allowList,
     });
 
     const verifyEvent: VerifyAuthChallengeEvent = {
@@ -166,6 +177,7 @@ describe("create→verify email_hmac agreement", () => {
       sleep: () => Promise.resolve(), // hold no real response floor in tests
       randomToken: () => TOKEN_BYTES,
       resolveHmacKey: () => Promise.resolve(KEY),
+      allowList,
     });
 
     // Issue for victim@example.com ...
@@ -184,6 +196,7 @@ describe("create→verify email_hmac agreement", () => {
       nowMs: () => NOW_MS,
       dynamodb: ddbMock as unknown as DynamoDBClient,
       resolveHmacKey: () => Promise.resolve(KEY),
+      allowList,
     });
 
     // ... but redeem claiming attacker@example.com.
@@ -215,6 +228,7 @@ describe("create→verify email_hmac agreement", () => {
       sleep: () => Promise.resolve(), // hold no real response floor in tests
       randomToken: () => TOKEN_BYTES,
       resolveHmacKey: () => Promise.resolve(KEY),
+      allowList,
     });
 
     await create(createEvent(EMAIL));
@@ -232,6 +246,7 @@ describe("create→verify email_hmac agreement", () => {
       // Wrong key — this is precisely what the ARN-vs-value bug caused: the two
       // sides keying on different material, so verification could never agree.
       resolveHmacKey: () => Promise.resolve("a-different-pepper"),
+      allowList,
     });
 
     const verifyEvent: VerifyAuthChallengeEvent = {

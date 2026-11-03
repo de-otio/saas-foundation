@@ -8,6 +8,7 @@
  */
 
 import {
+  Duration,
   RemovalPolicy,
   Stack,
   aws_cognito as cognito,
@@ -29,6 +30,8 @@ export class MockIdentity extends Construct implements IMagicLinkIdentity {
   public readonly denylistTable: dynamodb.ITable;
   public readonly bindingTable: dynamodb.ITable;
   public readonly tokenTtlMinutes: number = 10;
+  public readonly enrollment: "admin-only" | "self-signup";
+  public readonly defaultRefreshTokenValidity: Duration = Duration.hours(24);
   public readonly bounceTopic: sns.ITopic;
   public readonly preTokenGeneration: undefined = undefined;
   public readonly postConfirmation: undefined = undefined;
@@ -36,8 +39,13 @@ export class MockIdentity extends Construct implements IMagicLinkIdentity {
 
   private readonly pool: cognito.UserPool;
 
-  public constructor(scope: Construct, id: string) {
+  public constructor(
+    scope: Construct,
+    id: string,
+    opts: { readonly enrollment?: "admin-only" | "self-signup" } = {},
+  ) {
     super(scope, id);
+    this.enrollment = opts.enrollment ?? "admin-only";
     this.pool = new cognito.UserPool(this, "Pool", {
       removalPolicy: RemovalPolicy.DESTROY,
     });

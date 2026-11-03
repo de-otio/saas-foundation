@@ -6,7 +6,7 @@
  * - Auto-created Cognito website app client via `identity.addAppClient`.
  * - Lambda@Edge `check-auth` function on the viewer-request of the
  *   default behaviour (verifies the Cognito JWT cookie).
- * - `auth-verify` and `auth-signout` regional Lambdas with Function
+ * - `auth-login`, `auth-verify` and `auth-signout` regional Lambdas with Function
  *   URLs gated by CloudFront Origin Access Control at the IAM layer.
  * - CloudFront distribution with five behaviours.
  * - Response-headers policy (HSTS, strict CSP, COOP, CORP,
@@ -331,6 +331,13 @@ export class MagicLinkAuthSite extends Construct {
     // the bundle pipeline contract — esbuild does not run in the
     // consumer's synth process.
     // -------------------------------------------------------------------
+    // The refresh-token validity of the website client, in whole seconds. It is the
+    // lifetime of the ID-token cookie (auth-verify) and the window in which
+    // auth-signout accepts an expired ID token, so a user whose ID token lapsed can
+    // still revoke their refresh token. Every cookie consumer checks `exp` itself.
+    const refreshValiditySeconds = String(
+      Math.floor((props.refreshTokenValidity ?? identity.defaultRefreshTokenValidity).toSeconds()),
+    );
     const authVerifyConcurrency = props.reservedConcurrency?.authVerify ?? 20;
     const authVerifyFn = new lambda.Function(this, "AuthVerifyFn", {
       code: lambda.Code.fromAsset(bundlePaths["auth-verify"]),
@@ -352,6 +359,7 @@ export class MagicLinkAuthSite extends Construct {
         [RuntimeEnv.DOMAIN]: domain,
         [RuntimeEnv.BINDING_TABLE_NAME]: identity.bindingTable.tableName,
         [RuntimeEnv.METRICS_NAMESPACE]: metricsNamespace,
+        [RuntimeEnv.REFRESH_TOKEN_VALIDITY_SECONDS]: refreshValiditySeconds,
       },
     });
     authVerifyFn.addToRolePolicy(
@@ -385,6 +393,7 @@ export class MagicLinkAuthSite extends Construct {
         [RuntimeEnv.COGNITO_CLIENT_ID]: this.websiteClient.userPoolClientId,
         [RuntimeEnv.DOMAIN]: domain,
         [RuntimeEnv.METRICS_NAMESPACE]: metricsNamespace,
+        [RuntimeEnv.REFRESH_TOKEN_VALIDITY_SECONDS]: refreshValiditySeconds,
       },
     });
     // The handler calls AdminUserGlobalSignOut for the user in the VERIFIED ID
@@ -432,6 +441,9 @@ export class MagicLinkAuthSite extends Construct {
       description: `${this.namespacePrefix} auth-login endpoint for ${domain}.`,
       environment: {
         [RuntimeEnv.COGNITO_CLIENT_ID]: this.websiteClient.userPoolClientId,
+        // admin-only mode looks addresses up in this pool (ListUsers).
+        [RuntimeEnv.COGNITO_USER_POOL_ID]: identity.cognitoPool.userPoolId,
+        [RuntimeEnv.ENROLLMENT]: identity.enrollment,
         [RuntimeEnv.DOMAIN]: domain,
         [RuntimeEnv.RATE_LIMIT_TABLE_NAME]: identity.rateLimitTable.tableName,
         [RuntimeEnv.BINDING_TABLE_NAME]: identity.bindingTable.tableName,
@@ -445,9 +457,15 @@ export class MagicLinkAuthSite extends Construct {
         [RuntimeEnv.METRICS_NAMESPACE]: metricsNamespace,
       },
     });
+    // Only the Cognito actions the enrolment mode needs (least privilege;
+    // `signin_no_self_signup`): admin-only looks the address up (ListUsers) and
+    // never calls SignUp; self-signup signs the address up on the fly.
     authLoginFn.addToRolePolicy(
       new iam.PolicyStatement({
-        actions: ["cognito-idp:SignUp", "cognito-idp:InitiateAuth"],
+        actions:
+          identity.enrollment === "self-signup"
+            ? ["cognito-idp:SignUp", "cognito-idp:InitiateAuth"]
+            : ["cognito-idp:ListUsers", "cognito-idp:InitiateAuth"],
         resources: [identity.cognitoPool.userPoolArn],
       }),
     );
@@ -703,17 +721,9 @@ export class MagicLinkAuthSite extends Construct {
     new s3deploy.BucketDeployment(this, "LoginPagesDeploy", {
       sources: [
         s3deploy.Source.asset(loginPagesDir),
-        // Deploy-time runtime config for the browser. The login page is a
-        // static asset, so the public website-client id + region (needed for
-        // the browser's Cognito `InitiateAuth` call) are injected here. CDK
-        // substitutes the `userPoolClientId` token at deploy via the bucket
-        // deployment custom resource. Nothing secret: the SPA client has no
-        // secret (`generateSecret: false`), and the client id is public.
-        s3deploy.Source.jsonData("login-config.json", {
-          region,
-          userPoolClientId: this.websiteClient.userPoolClientId,
-          domain,
-        }),
+        // No deploy-time config file: the pages are static and read nothing but
+        // same-origin endpoints (`/auth-login`, `/auth-verify`). A `login-config.json`
+        // used to publish the client id, region and domain; nothing read it.
       ],
       destinationBucket: this.loginPageBucket,
       prune: true,

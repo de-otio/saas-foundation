@@ -45,6 +45,7 @@ import * as sns from "aws-cdk-lib/aws-sns";
 import { Construct } from "constructs";
 
 import { RuntimeEnv } from "../_internal/runtime-env.js";
+import { TTL_ATTRIBUTE } from "../_internal/signin-constants.js";
 import {
   installCostDosGuard,
   type CostDosGuardProps,
@@ -467,7 +468,8 @@ export class SharedDistributionIdentity extends Construct {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: magicLinkTokensEncryption,
       ...(props.tableKmsKey ? { encryptionKey: props.tableKmsKey } : {}),
-      timeToLiveAttribute: "expires_at",
+      // Cleanup only; the handlers write `expires_at` and compare it with the clock.
+      timeToLiveAttribute: TTL_ATTRIBUTE,
       pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
       removalPolicy: RemovalPolicy.RETAIN,
     });

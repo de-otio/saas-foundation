@@ -26,6 +26,27 @@
         </form>
         <div id="error-message" class="error-message" role="status" aria-live="polite"></div>
         <div id="success-message" class="success-message" role="status" aria-live="polite"></div>
+        <!--
+          Shown only after a request was accepted. For a link opened in another
+          browser or on another device: the 8-digit code from the mail is typed
+          HERE, in the browser that asked (it holds the binding cookie).
+        -->
+        <form id="code-form" class="code-form" hidden>
+          <div class="form-group">
+            <label for="code">Or enter the 8-digit code from the email</label>
+            <input
+              type="text"
+              id="code"
+              name="code"
+              inputmode="numeric"
+              autocomplete="one-time-code"
+              maxlength="9"
+              placeholder="12345678"
+              required
+            />
+          </div>
+          <button type="submit" class="submit-button">Sign in with the code</button>
+        </form>
       </div>
     </main>
     <script src="/login.js"></script>
