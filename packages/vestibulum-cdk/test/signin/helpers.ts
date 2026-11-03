@@ -78,6 +78,11 @@ const SERVICES: Readonly<Record<string, string>> = {
  * Only direct calls are found; that is the point — a handler that sends a
  * command must be granted exactly that action (01-evidence #6, #14).
  */
+/** Escapes every RegExp metacharacter, backslash included. */
+function escapeRegExp(s: string): string {
+  return s.replace(/[\\^$.*+?()[\]{}|/-]/g, "\\$&");
+}
+
 export function sdkActionsUsedBy(handlerDir: string): Set<string> {
   const used = new Set<string>();
   const dir = path.join(HANDLERS_DIR, handlerDir);
@@ -85,7 +90,7 @@ export function sdkActionsUsedBy(handlerDir: string): Set<string> {
     const src = fs.readFileSync(path.join(dir, file), "utf8");
     for (const [pkg, prefix] of Object.entries(SERVICES)) {
       const importRe = new RegExp(
-        `import\\s*\\{([^}]*)\\}\\s*from\\s*"${pkg.replace(/[/@-]/g, "\\$&")}"`,
+        `import\\s*\\{([^}]*)\\}\\s*from\\s*"${escapeRegExp(pkg)}"`,
         "g",
       );
       for (const m of src.matchAll(importRe)) {
