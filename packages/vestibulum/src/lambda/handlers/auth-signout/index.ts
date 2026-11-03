@@ -1,14 +1,23 @@
 /**
  * auth-signout — regional Lambda endpoint for user sign-out.
  *
- * Clears the ID-token and refresh-token cookies and revokes the Cognito
- * refresh token server-side via AdminUserGlobalSignOut. Even if Cognito
- * revocation fails (e.g. token already expired), the cookies are cleared
- * so the browser-observable state is always "signed out".
+ * Clears the ID-token and refresh-token cookies and revokes the user's Cognito
+ * refresh tokens server-side via AdminUserGlobalSignOut. Even if revocation
+ * fails the cookies are cleared, so the browser-observable state is always
+ * "signed out" — but a failed revocation is no longer silent: it emits a
+ * `SignOutRevocation` metric with a closed outcome enum.
+ *
+ * Why the ID token and not the refresh token: the refresh cookie is scoped to
+ * `Path=/auth-verify`, so a browser never sends it to `/auth-signout`. The ID
+ * token cookie is `Path=/` and always arrives.
  *
  * Security properties enforced here:
  * - Origin header CSRF check (prevents cross-site sign-out requests).
- * - Server-side refresh-token revocation via AdminUserGlobalSignOut.
+ * - The user to sign out comes from a VERIFIED ID token (signature, issuer,
+ *   audience, expiry, `token_use`), never from an unverified cookie: anyone who
+ *   knew a user's `sub` could otherwise sign that user out.
+ * - The IAM action the construct grants (`cognito-idp:AdminUserGlobalSignOut`)
+ *   is the one this code calls; a synth test keeps the two in step.
  *
  * Direct Function URL access is blocked by CloudFront Origin Access Control
  * (OAC) at the AWS IAM layer — see auth-verify for the full discussion.
@@ -21,8 +30,10 @@ import {
   CognitoIdentityProviderClient,
   AdminUserGlobalSignOutCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
+import { CognitoJwtVerifier } from "aws-jwt-verify";
 import { RuntimeEnv } from "../../shared/runtime-env.js";
-import { parseCookies, buildSetCookie } from "../auth-verify/cookie.js";
+import { emitSigninMetric, readCookie } from "../../shared/signin.js";
+import { buildSetCookie } from "../auth-verify/cookie.js";
 import { ID_TOKEN_COOKIE_NAME, REFRESH_TOKEN_COOKIE_NAME } from "../../shared/cookie-names.js";
 
 // ---------------------------------------------------------------------------
@@ -31,6 +42,8 @@ import { ID_TOKEN_COOKIE_NAME, REFRESH_TOKEN_COOKIE_NAME } from "../../shared/co
 
 export interface LambdaFunctionUrlEvent {
   readonly headers?: Record<string, string | undefined>;
+  /** Payload format 2.0 delivers request cookies here (and may drop the header). */
+  readonly cookies?: readonly string[];
   readonly body?: string | null;
 }
 
@@ -51,6 +64,12 @@ export interface LambdaFunctionUrlResult {
  */
 export interface AuthSignoutHandlerDeps {
   readonly cognitoClient?: CognitoIdentityProviderClient;
+  /**
+   * Verifies an ID token and returns the pool username to sign out. MUST throw
+   * on any invalid token. Defaults to `aws-jwt-verify` against this pool and
+   * client. Injected in tests.
+   */
+  readonly verifyIdToken?: (token: string) => Promise<{ readonly username: string }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -83,56 +102,68 @@ function buildClearCookieHeaders(domain: string): string[] {
   return [idTokenClear, refreshTokenClear];
 }
 
-/**
- * Extracts the `sub` claim from a JWT ID token without verifying the
- * signature. This is intentionally unverified because:
- * - We are the trusted server-side code that issued the cookie.
- * - The cookie is HttpOnly and was set by our own auth-verify endpoint.
- * - We use the sub only to call AdminUserGlobalSignOut on the correct user.
- * - Even a tampered sub would at worst call GlobalSignOut on the wrong user
- *   (harmless) or fail (handled by the catch block).
- *
- * @returns The `sub` claim string, or undefined if extraction fails.
- */
-function extractSubFromJwt(token: string): string | undefined {
-  try {
-    const parts = token.split(".");
-    if (parts.length !== 3) {
-      return undefined;
-    }
-    const payloadPart = parts[1];
-    if (payloadPart === undefined || payloadPart === "") {
-      return undefined;
-    }
-    const padded = payloadPart.replace(/-/g, "+").replace(/_/g, "/");
-    const decoded = Buffer.from(padded, "base64").toString("utf8");
-    const payload = JSON.parse(decoded) as Record<string, unknown>;
-    const sub = payload["sub"];
-    if (typeof sub === "string") {
-      return sub;
-    }
-    return undefined;
-  } catch {
-    return undefined;
-  }
-}
+/** Closed set of revocation outcomes, emitted as a metric. */
+type RevocationOutcome = "revoked" | "no_id_token" | "unverified" | "error";
 
 /**
  * Create an auth-signout Lambda Function URL handler.
  *
  * Flow:
  * 1. Origin header CSRF check (403 on failure).
- * 2. Read the refresh-token cookie.
- * 3. Call Cognito AdminUserGlobalSignOut (best-effort — proceed on failure).
+ * 2. Read and VERIFY the ID-token cookie.
+ * 3. Call Cognito AdminUserGlobalSignOut for the verified user (best-effort —
+ *    cookies are cleared regardless, and the outcome is emitted as a metric).
  * 4. Clear both cookies, return 200 with empty body.
  */
 export function createAuthSignoutHandler(deps: AuthSignoutHandlerDeps = {}) {
   let defaultCognitoClient: CognitoIdentityProviderClient | undefined;
+  let defaultVerifier:
+    | { verify(token: string): Promise<{ sub: string; [claim: string]: unknown }> }
+    | undefined;
 
   function getCognitoClient(): CognitoIdentityProviderClient {
     if (deps.cognitoClient) return deps.cognitoClient;
     defaultCognitoClient ??= new CognitoIdentityProviderClient({});
     return defaultCognitoClient;
+  }
+
+  async function verifyIdToken(
+    token: string,
+    userPoolId: string,
+    clientId: string,
+  ): Promise<{ readonly username: string }> {
+    if (deps.verifyIdToken) return deps.verifyIdToken(token);
+    defaultVerifier ??= CognitoJwtVerifier.create({ userPoolId, clientId, tokenUse: "id" });
+    const payload = await defaultVerifier.verify(token);
+    // `cognito:username` is the exact value the Admin APIs take; it equals `sub`
+    // on pools that sign in by alias, but is authoritative where they differ.
+    const username = payload["cognito:username"];
+    return { username: typeof username === "string" && username !== "" ? username : payload.sub };
+  }
+
+  async function revoke(
+    cookieSource: LambdaFunctionUrlEvent,
+    userPoolId: string,
+    clientId: string,
+  ): Promise<RevocationOutcome> {
+    const idTokenRaw = readCookie(cookieSource, ID_TOKEN_COOKIE_NAME);
+    if (idTokenRaw === undefined) return "no_id_token";
+
+    let username: string;
+    try {
+      username = (await verifyIdToken(idTokenRaw, userPoolId, clientId)).username;
+    } catch {
+      return "unverified";
+    }
+
+    try {
+      await getCognitoClient().send(
+        new AdminUserGlobalSignOutCommand({ UserPoolId: userPoolId, Username: username }),
+      );
+      return "revoked";
+    } catch {
+      return "error";
+    }
   }
 
   return async function handler(event: LambdaFunctionUrlEvent): Promise<LambdaFunctionUrlResult> {
@@ -157,37 +188,20 @@ export function createAuthSignoutHandler(deps: AuthSignoutHandlerDeps = {}) {
     }
 
     // ------------------------------------------------------------------
-    // 2. Read refresh-token cookie for server-side revocation.
+    // 2-3. Verify the ID token, then revoke. Never blocks the cookie clear.
     // ------------------------------------------------------------------
-    const cookieHeader = headers["cookie"];
-    const cookies = parseCookies(cookieHeader);
-    const refreshToken = cookies[REFRESH_TOKEN_COOKIE_NAME];
-
-    // ------------------------------------------------------------------
-    // 3. Server-side revocation — best-effort (proceed on failure).
-    // ------------------------------------------------------------------
-    if (refreshToken !== undefined && refreshToken !== "") {
-      const userPoolId = process.env[RuntimeEnv.COGNITO_USER_POOL_ID];
-      if (userPoolId !== undefined && userPoolId !== "") {
-        try {
-          const idTokenRaw = cookies[ID_TOKEN_COOKIE_NAME];
-          if (idTokenRaw !== undefined && idTokenRaw !== "") {
-            const sub = extractSubFromJwt(idTokenRaw);
-            if (sub !== undefined && sub !== "") {
-              await getCognitoClient().send(
-                new AdminUserGlobalSignOutCommand({
-                  UserPoolId: userPoolId,
-                  Username: sub,
-                }),
-              );
-            }
-          }
-        } catch {
-          console.error(
-            "auth-signout: AdminUserGlobalSignOut error (proceeding with cookie clear)",
-          );
-        }
-      }
+    const userPoolId = process.env[RuntimeEnv.COGNITO_USER_POOL_ID];
+    const clientId = process.env[RuntimeEnv.COGNITO_CLIENT_ID];
+    let outcome: RevocationOutcome = "error";
+    if (userPoolId !== undefined && userPoolId !== "" && clientId !== undefined && clientId !== "") {
+      outcome = await revoke(event, userPoolId, clientId);
+    } else {
+      console.error("auth-signout: pool or client id not configured");
+    }
+    emitSigninMetric("SignOutRevocation", { outcome });
+    if (outcome === "error" || outcome === "unverified") {
+      // Closed enum only — no token, username or error text.
+      console.error(`auth-signout: revocation ${outcome} (proceeding with cookie clear)`);
     }
 
     // ------------------------------------------------------------------

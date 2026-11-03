@@ -39,6 +39,14 @@ export const RuntimeEnv = {
   SIGNUP_MODE: "VESTIBULUM_SIGNUP_MODE",
   /** HMAC-SHA-256 secret used by the bounce-handler to hash email addresses. */
   BOUNCE_HMAC_SECRET: "VESTIBULUM_BOUNCE_HMAC_SECRET",
+  /** Pending-sign-in binding table (Cognito Session held server-side). */
+  BINDING_TABLE_NAME: "VESTIBULUM_BINDING_TABLE",
+  /** Minimum `/auth-login` response time in ms. */
+  SIGNIN_FLOOR_MS: "VESTIBULUM_SIGNIN_FLOOR_MS",
+  /** Minimum CreateAuthChallenge duration in ms. */
+  CREATE_FLOOR_MS: "VESTIBULUM_CREATE_FLOOR_MS",
+  /** SES configuration set whose event destination feeds the bounce topic. */
+  SES_CONFIGURATION_SET: "VESTIBULUM_SES_CONFIGURATION_SET",
   /** CloudWatch metrics namespace used by the regional handlers. */
   METRICS_NAMESPACE: "VESTIBULUM_METRICS_NAMESPACE",
   /**

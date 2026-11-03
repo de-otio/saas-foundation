@@ -23,8 +23,13 @@ export interface MagicLinkEmailOptions {
   readonly token: string;
   /** Subject line override. Defaults to "Your sign-in link". */
   readonly subject?: string;
-  /** TTL in minutes (for the body copy). Defaults to 15. */
+  /** TTL in minutes (for the body copy). Defaults to 10. */
   readonly ttlMinutes?: number;
+  /**
+   * SES configuration set. Its event destination publishes bounces and
+   * complaints to the bounce topic; without it SES never reports them.
+   */
+  readonly configurationSetName?: string;
 }
 
 /**
@@ -47,7 +52,7 @@ export function buildMagicLinkUrl(domain: string, token: string): string {
  */
 export async function sendMagicLinkEmail(opts: MagicLinkEmailOptions): Promise<void> {
   const url = buildMagicLinkUrl(opts.domain, opts.token);
-  const ttl = opts.ttlMinutes ?? 15;
+  const ttl = opts.ttlMinutes ?? 10;
   const subject = opts.subject ?? "Your sign-in link";
 
   const textBody = [
@@ -72,6 +77,9 @@ export async function sendMagicLinkEmail(opts: MagicLinkEmailOptions): Promise<v
   await opts.sesClient.send(
     new SendEmailCommand({
       Source: opts.fromAddress,
+      ...(opts.configurationSetName !== undefined && opts.configurationSetName !== ""
+        ? { ConfigurationSetName: opts.configurationSetName }
+        : {}),
       Destination: { ToAddresses: [opts.toAddress] },
       Message: {
         Subject: { Data: subject, Charset: "UTF-8" },

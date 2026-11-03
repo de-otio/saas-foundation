@@ -70,6 +70,13 @@ import {
   type CostDosGuardResources,
 } from "../_internal/cost-dos-guard.js";
 import { buildAppClientOptions } from "../app-clients/index.js";
+import { RuntimeEnv } from "../_internal/runtime-env.js";
+import {
+  DEFAULT_TOKEN_TTL_MINUTES,
+  MAX_TOKEN_TTL_MINUTES,
+  MIN_TOKEN_TTL_MINUTES,
+  TTL_ATTRIBUTE,
+} from "../_internal/signin-constants.js";
 import type { AddAppClientProps } from "../_internal/identity-handle.js";
 
 // ---------------------------------------------------------------------------
@@ -126,32 +133,6 @@ const LOCK_MANIFEST: LockManifestShape = (() => {
 })();
 
 // ---------------------------------------------------------------------------
-// Runtime env names — duplicated from `@de-otio/vestibulum`'s shared/runtime-env
-// to avoid a build-time dep on the runtime package's `dist/` shape. The
-// names are part of the runtime contract; the bundling pipeline pins the
-// bundled handler bytes, this construct pins the env-var contract.
-// ---------------------------------------------------------------------------
-
-const RuntimeEnv = {
-  TOKEN_TABLE_NAME: "VESTIBULUM_TOKEN_TABLE",
-  RATE_LIMIT_TABLE_NAME: "VESTIBULUM_RATE_LIMIT_TABLE",
-  DENYLIST_TABLE_NAME: "VESTIBULUM_DENYLIST_TABLE",
-  COGNITO_USER_POOL_ID: "VESTIBULUM_USER_POOL_ID",
-  SES_FROM: "VESTIBULUM_SES_FROM",
-  SES_REGION: "VESTIBULUM_SES_REGION",
-  TOKEN_TTL_MINUTES: "VESTIBULUM_TOKEN_TTL_MINUTES",
-  TOKEN_SENDS_PER_WINDOW: "VESTIBULUM_TOKEN_SENDS_PER_WINDOW",
-  SIGN_UPS_PER_WINDOW: "VESTIBULUM_SIGN_UPS_PER_WINDOW",
-  ALLOWED_EMAIL_DOMAINS: "VESTIBULUM_ALLOWED_EMAIL_DOMAINS",
-  SIGNUP_MODE: "VESTIBULUM_SIGNUP_MODE",
-  BOUNCE_HMAC_SECRET: "VESTIBULUM_BOUNCE_HMAC_SECRET",
-  // Front-door domain the magic-link URL points at (CreateAuthChallenge builds
-  // `https://<domain>/login/callback#token=...`). Must match MagicLinkAuthSite's
-  // `domain`. Consumed by the create-auth and auth-verify handlers.
-  DOMAIN: "VESTIBULUM_DOMAIN",
-} as const;
-
-// ---------------------------------------------------------------------------
 // SES domain verification-wait — inline custom-resource handler sources
 //
 // Cold-SES-domain fix (B3): Cognito validates that the SES sender domain is
@@ -168,7 +149,7 @@ const RuntimeEnv = {
 //
 // Kept inline (not in the lambda-bundles pipeline) because the dependency
 // surface is a single AWS SDK client (`@aws-sdk/client-sesv2`, present on the
-// NODEJS_22_X runtime) and the code is short enough to read in-place.
+// NODEJS_24_X runtime) and the code is short enough to read in-place.
 // ---------------------------------------------------------------------------
 
 /**
@@ -314,8 +295,12 @@ export interface MagicLinkIdentityProps {
   readonly sesIdentitySender: string;
 
   /**
-   * Magic-link token TTL in minutes.
-   * @default 15
+   * Magic-link lifetime in minutes. Three owners enforce it and all follow this
+   * one value: the Cognito app client's `AuthSessionValidity`, the binding row
+   * and cookie, and the token row's `expires_at` (checked in Verify).
+   *
+   * Must be an integer from 3 to 15 (Cognito's `AuthSessionValidity` range).
+   * @default 10
    */
   readonly tokenTtlMinutes?: number;
 
@@ -503,6 +488,20 @@ export class MagicLinkIdentity extends Construct {
   /** DynamoDB table for per-email rate-limit counters. */
   readonly rateLimitTable: dynamodb.Table;
 
+  /**
+   * DynamoDB table of pending sign-in requests, keyed by `SHA-256(binding
+   * secret)`. Holds the Cognito `Session` server-side so the browser never sees
+   * it; only the browser that holds the matching `__Host-signin` cookie can
+   * redeem.
+   */
+  readonly bindingTable: dynamodb.Table;
+
+  /** Link lifetime in minutes, applied to every app client and table row. */
+  readonly tokenTtlMinutes: number;
+
+  /** SES configuration set whose event destination feeds {@link bounceTopic}. */
+  readonly sesConfigurationSet: ses.ConfigurationSet;
+
   /** DynamoDB table for the bounce/complaint denylist (HMAC-hashed). */
   readonly denylistTable: dynamodb.Table;
 
@@ -637,7 +636,19 @@ export class MagicLinkIdentity extends Construct {
     // Derived sizing / TTLs
     // -----------------------------------------------------------------------
 
-    const tokenTtlMinutes = props.tokenTtlMinutes ?? 15;
+    const tokenTtlMinutes = props.tokenTtlMinutes ?? DEFAULT_TOKEN_TTL_MINUTES;
+    if (
+      !Number.isInteger(tokenTtlMinutes) ||
+      tokenTtlMinutes < MIN_TOKEN_TTL_MINUTES ||
+      tokenTtlMinutes > MAX_TOKEN_TTL_MINUTES
+    ) {
+      throw new MagicLinkIdentityPropsError(
+        `[vestibulum-cdk:MagicLinkIdentity] tokenTtlMinutes must be an integer from ` +
+          `${MIN_TOKEN_TTL_MINUTES} to ${MAX_TOKEN_TTL_MINUTES} (Cognito AuthSessionValidity ` +
+          `range); got ${String(props.tokenTtlMinutes)}.`,
+      );
+    }
+    this.tokenTtlMinutes = tokenTtlMinutes;
     const tokenSendsPerWindow = props.tokenSendsPerWindow ?? 3;
     const signUpsPerWindow = props.signUpsPerWindow ?? 3;
     this.defaultIdTokenValidity = props.defaultIdTokenValidity ?? Duration.minutes(15);
@@ -666,7 +677,9 @@ export class MagicLinkIdentity extends Construct {
         type: dynamodb.AttributeType.STRING,
       },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-      timeToLiveAttribute: "expires_at",
+      // Cleanup only: Verify refuses an expired row itself. The handler writes
+      // this same attribute (see test/signin/constants-agreement.test.ts).
+      timeToLiveAttribute: TTL_ATTRIBUTE,
       pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
       removalPolicy: RemovalPolicy.RETAIN,
     });
@@ -674,14 +687,26 @@ export class MagicLinkIdentity extends Construct {
     this.rateLimitTable = new dynamodb.Table(this, "RateLimitTable", {
       partitionKey: { name: "bucket_id", type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-      timeToLiveAttribute: "expires_at",
+      timeToLiveAttribute: TTL_ATTRIBUTE,
       pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
       removalPolicy: RemovalPolicy.RETAIN,
+    });
+
+    // Pending sign-in requests. The row holds a live Cognito Session for at most
+    // `tokenTtlMinutes`, so it is neither backed up nor retained on teardown.
+    this.bindingTable = new dynamodb.Table(this, "BindingTable", {
+      partitionKey: { name: "binding_hash", type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      timeToLiveAttribute: TTL_ATTRIBUTE,
+      removalPolicy: RemovalPolicy.DESTROY,
     });
 
     this.denylistTable = new dynamodb.Table(this, "DenylistTable", {
       partitionKey: { name: "email_hmac", type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      // The bounce-handler writes a 365-day expiry here; without a TTL
+      // attribute on the table that expiry was never honoured.
+      timeToLiveAttribute: TTL_ATTRIBUTE,
       pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
       removalPolicy: RemovalPolicy.RETAIN,
     });
@@ -693,6 +718,34 @@ export class MagicLinkIdentity extends Construct {
     this.bounceTopic = new sns.Topic(this, "BounceTopic", {
       displayName: "Vestibulum SES Bounce/Complaint Topic",
     });
+
+    // SES publishes bounces and complaints only to a topic that a configuration
+    // set's EVENT DESTINATION names. Without this, the topic, the subscription
+    // and the bounce-handler all exist but nothing ever reaches them. Every send
+    // (and, via the identity's default, every mail from this identity) carries
+    // the set.
+    this.sesConfigurationSet = new ses.ConfigurationSet(this, "ConfigurationSet", {
+      reputationMetrics: true,
+    });
+    this.sesConfigurationSet.addEventDestination("BounceComplaintEvents", {
+      destination: ses.EventDestination.snsTopic(this.bounceTopic),
+      events: [ses.EmailSendingEvent.BOUNCE, ses.EmailSendingEvent.COMPLAINT],
+    });
+    // SES must be allowed to publish. Scoped to this account's configuration set.
+    this.bounceTopic.addToResourcePolicy(
+      new iam.PolicyStatement({
+        sid: "AllowSesConfigurationSetPublish",
+        principals: [new iam.ServicePrincipal("ses.amazonaws.com")],
+        actions: ["sns:Publish"],
+        resources: [this.bounceTopic.topicArn],
+        conditions: {
+          StringEquals: { "AWS:SourceAccount": Stack.of(this).account },
+          StringLike: {
+            "AWS:SourceArn": `arn:aws:ses:${Stack.of(this).region}:${Stack.of(this).account}:configuration-set/${this.sesConfigurationSet.configurationSetName}`,
+          },
+        },
+      }),
+    );
 
     // -----------------------------------------------------------------------
     // Common Lambda env vars
@@ -718,6 +771,7 @@ export class MagicLinkIdentity extends Construct {
       [RuntimeEnv.SIGN_UPS_PER_WINDOW]: String(signUpsPerWindow),
       [RuntimeEnv.ALLOWED_EMAIL_DOMAINS]: JSON.stringify(props.allowedEmailDomains),
       [RuntimeEnv.BOUNCE_HMAC_SECRET]: hmacSecret.secretArn,
+      [RuntimeEnv.SES_CONFIGURATION_SET]: this.sesConfigurationSet.configurationSetName,
     };
 
     // -----------------------------------------------------------------------
@@ -725,7 +779,7 @@ export class MagicLinkIdentity extends Construct {
     // -----------------------------------------------------------------------
 
     const commonLambdaProps: Omit<lambda.FunctionProps, "code" | "handler"> = {
-      runtime: lambda.Runtime.NODEJS_22_X,
+      runtime: lambda.Runtime.NODEJS_24_X,
       logRetention: logs.RetentionDays.ONE_MONTH,
       reservedConcurrentExecutions: 10,
       environment: { ...commonEnv },
@@ -790,6 +844,9 @@ export class MagicLinkIdentity extends Construct {
         actions: ["ses:SendEmail", "ses:SendRawEmail"],
         resources: [
           `arn:aws:ses:${Stack.of(this).region}:${Stack.of(this).account}:identity/${senderDomain}`,
+          // SES authorises a send that names a configuration set against the
+          // set as well as the identity; omitting it is AccessDenied at runtime.
+          `arn:aws:ses:${Stack.of(this).region}:${Stack.of(this).account}:configuration-set/${this.sesConfigurationSet.configurationSetName}`,
         ],
       }),
     );
@@ -826,6 +883,7 @@ export class MagicLinkIdentity extends Construct {
     const sesIdentity = new ses.EmailIdentity(this, "SesIdentity", {
       identity: ses.Identity.domain(senderDomain),
       dkimSigning: true,
+      configurationSet: this.sesConfigurationSet,
     });
     // B3 (cold-SES-domain fix): DESTROY, not RETAIN. With the
     // verification-wait below, a cold deploy now converges in the happy
@@ -893,7 +951,7 @@ export class MagicLinkIdentity extends Construct {
     // -----------------------------------------------------------------------
 
     const sesVerifyOnEvent = new lambda.Function(this, "SesVerifyOnEventFn", {
-      runtime: lambda.Runtime.NODEJS_22_X,
+      runtime: lambda.Runtime.NODEJS_24_X,
       handler: "index.handler",
       code: lambda.Code.fromInline(SES_VERIFY_ON_EVENT_SOURCE),
       timeout: Duration.seconds(30),
@@ -905,7 +963,7 @@ export class MagicLinkIdentity extends Construct {
     });
 
     const sesVerifyIsComplete = new lambda.Function(this, "SesVerifyIsCompleteFn", {
-      runtime: lambda.Runtime.NODEJS_22_X,
+      runtime: lambda.Runtime.NODEJS_24_X,
       handler: "index.handler",
       code: lambda.Code.fromInline(SES_VERIFY_IS_COMPLETE_SOURCE),
       timeout: Duration.seconds(30),
@@ -1228,6 +1286,7 @@ export class MagicLinkIdentity extends Construct {
       federationEnabled: this.federationEnabled,
       defaultIdTokenValidity: this.defaultIdTokenValidity,
       defaultRefreshTokenValidity: this.defaultRefreshTokenValidity,
+      tokenTtlMinutes: this.tokenTtlMinutes,
       props: {
         ...(props.oauth !== undefined && { oAuth: props.oauth }),
         ...(props.generateSecret !== undefined && {

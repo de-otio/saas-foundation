@@ -28,6 +28,7 @@ import {
 import { DynamoDBClient, PutItemCommand } from "@aws-sdk/client-dynamodb";
 import { hmacEmail, resolveEmailHmacKeyFromEnv } from "../../shared/email-hmac.js";
 import { RuntimeEnv } from "../../shared/runtime-env.js";
+import { TTL_ATTRIBUTE } from "../../shared/signin.js";
 
 /** SES notification type discriminant. */
 type SesNotificationType = "Bounce" | "Complaint" | "Delivery";
@@ -58,9 +59,18 @@ interface SesMail {
   readonly destination: readonly string[];
 }
 
-/** Top-level SES notification envelope (wrapped inside the SNS Message). */
+/**
+ * Top-level SES envelope (wrapped inside the SNS Message).
+ *
+ * SES publishes two JSON shapes. Identity-level notifications carry
+ * `notificationType`; configuration-set EVENT DESTINATIONS — which is how this
+ * construct wires bounces to the topic — carry `eventType` instead. Reading
+ * only `notificationType` would make every wired event "unknown" and silently
+ * ignored, so both are accepted.
+ */
 interface SesNotification {
-  readonly notificationType: SesNotificationType;
+  readonly notificationType?: SesNotificationType;
+  readonly eventType?: SesNotificationType;
   readonly mail: SesMail;
   readonly bounce?: SesBounce;
   readonly complaint?: SesComplaint;
@@ -157,7 +167,7 @@ export function createBounceHandler(deps: BounceHandlerDeps = {}) {
           UserAttributes: [{ Name: "custom:email_quarantined", Value: "true" }],
         }),
       );
-      console.info(`bounce-handler: quarantined Cognito user (hash=${emailHash})`);
+      console.info(`bounce-handler: quarantined Cognito user (hash=${emailHash.slice(0, 16)})`);
     } catch (err) {
       if (err instanceof UserNotFoundException) {
         // User not in Cognito — write HMAC hash to the denylist table.
@@ -170,12 +180,13 @@ export function createBounceHandler(deps: BounceHandlerDeps = {}) {
               // schema (and the read key in quarantine-check).
               email_hmac: { S: emailHash },
               quarantined_at: { S: new Date().toISOString() },
-              ttl: { N: String(ttlSecs) },
+              // Must be the attribute the denylist table's TTL names.
+              [TTL_ATTRIBUTE]: { N: String(ttlSecs) },
             },
           }),
         );
         console.info(
-          `bounce-handler: wrote denylist entry for non-Cognito address (hash=${emailHash})`,
+          `bounce-handler: wrote denylist entry for non-Cognito address (hash=${emailHash.slice(0, 16)})`,
         );
       } else {
         throw err;
@@ -253,18 +264,21 @@ export function createBounceHandler(deps: BounceHandlerDeps = {}) {
     for (const record of event.Records) {
       try {
         const notification = JSON.parse(record.Sns.Message) as SesNotification;
+        const kind = notification.notificationType ?? notification.eventType;
 
-        if (notification.notificationType === "Bounce") {
+        if (kind === "Bounce") {
           await processBounce(notification, userPoolId, denylistTableName, hmacSecret);
-        } else if (notification.notificationType === "Complaint") {
+        } else if (kind === "Complaint") {
           await processComplaint(notification, userPoolId, denylistTableName, hmacSecret);
         } else {
-          console.info(
-            `bounce-handler: ignoring notification type=${notification.notificationType}`,
-          );
+          console.info(`bounce-handler: ignoring notification type=${String(kind)}`);
         }
       } catch (err) {
-        console.error(`bounce-handler: error processing record: ${String(err)}`);
+        // Name only: a JSON.parse failure's message quotes a snippet of the SNS
+        // body, which contains recipient addresses.
+        console.error(
+          `bounce-handler: error processing record: ${err instanceof Error ? err.name : "unknown"}`,
+        );
         errors.push(err);
       }
     }

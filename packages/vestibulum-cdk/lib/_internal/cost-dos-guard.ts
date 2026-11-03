@@ -303,7 +303,7 @@ export function installCostDosGuard(
   let selfDefenceHandler: lambda.Function | undefined;
   if (guard.selfDefence === true) {
     selfDefenceHandler = new lambda.Function(scope, "CostDosSelfDefenceFn", {
-      runtime: lambda.Runtime.NODEJS_22_X,
+      runtime: lambda.Runtime.NODEJS_24_X,
       architecture: lambda.Architecture.ARM_64,
       memorySize: 128,
       timeout: Duration.seconds(30),

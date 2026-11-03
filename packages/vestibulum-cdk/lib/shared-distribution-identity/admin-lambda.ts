@@ -131,7 +131,7 @@ export class AdminLambda extends Construct {
     // (tests synth against it, P3 populates the bundle).
     // -------------------------------------------------------------------------
     const adminFn = new lambda.Function(this, 'Fn', {
-      runtime: lambda.Runtime.NODEJS_22_X,
+      runtime: lambda.Runtime.NODEJS_24_X,
       code: lambda.Code.fromAsset(resolveBundlePath('admin')),
       handler: 'index.handler',
       logRetention: logs.RetentionDays.THREE_MONTHS,

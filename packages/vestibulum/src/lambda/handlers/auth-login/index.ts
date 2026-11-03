@@ -6,13 +6,25 @@
  * flow behind a per-client-IP rate limit and keep the Cognito client id out of
  * the browser.
  *
- * Security properties enforced here:
+ * Browser binding (`signin_link_bound_to_requesting_browser`): the Cognito
+ * `Session` NEVER reaches the browser. It is stored server-side under
+ * `SHA-256(b)`, where `b` is a fresh 256-bit secret delivered only as an
+ * HttpOnly `__Host-signin` cookie. `/auth-verify` can complete the session only
+ * for a request that carries that cookie, so a forwarded or intercepted link
+ * signs nobody in and consumes nothing.
+ *
+ * Indistinguishable responses (`signin_request_indistinguishable`): once the
+ * request is well-formed, EVERY outcome — session issued, Cognito error,
+ * per-IP limit hit, store error — returns the same `202 {}` with a binding
+ * cookie, after at least `SIGNIN_FLOOR_MS`. A failed outcome stores a binding
+ * row with no session, so redeeming it fails exactly like a wrong answer.
+ *
+ * Other properties:
  * - Origin header CSRF check (prevents cross-site form submissions).
  * - Per-client-IP rate limit (cost-DoS / enumeration brake).
- * - Generic error responses (prevents distinguishing failure modes).
  * - Enumeration parity: SignUp errors (existing user, disallowed domain via a
  *   PreSignUp rejection) are all swallowed so they're indistinguishable.
- * - No PII in logs (emails HMAC-hashed, IPs never logged raw).
+ * - No PII in logs (emails never logged; metrics carry closed enums only).
  *
  * Direct Function URL access is blocked by CloudFront Origin Access Control
  * (OAC) at the AWS IAM layer — the Function URL's `authType` is `AWS_IAM` and
@@ -30,8 +42,20 @@ import {
   InitiateAuthCommand,
   type InitiateAuthCommandOutput,
 } from "@aws-sdk/client-cognito-identity-provider";
-import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import { DynamoDBClient, PutItemCommand } from "@aws-sdk/client-dynamodb";
 import { RuntimeEnv } from "../../shared/runtime-env.js";
+import {
+  DEFAULT_SIGNIN_FLOOR_MS,
+  TTL_ATTRIBUTE,
+  buildBindingCookie,
+  emitSigninMetric,
+  hashBindingSecret,
+  newBindingSecret,
+  parseMs,
+  parseTokenTtlMinutes,
+  realSleep,
+  withFloor,
+} from "../../shared/signin.js";
 import { tryConsumeIpRateLimit, DEFAULT_LOGINS_PER_WINDOW } from "./ip-rate-limit.js";
 
 // ---------------------------------------------------------------------------
@@ -51,6 +75,11 @@ export interface LambdaFunctionUrlEvent {
 export interface LambdaFunctionUrlResult {
   statusCode: number;
   headers?: Record<string, string>;
+  /**
+   * Set-Cookie values. Lambda Function URLs (payload format 2.0) emit cookies
+   * ONLY via this `cookies` array, not via `Set-Cookie`/`multiValueHeaders`.
+   */
+  cookies?: string[];
   body?: string;
 }
 
@@ -64,6 +93,10 @@ export interface AuthLoginHandlerDeps {
   readonly nowMs?: () => number;
   /** Override the throwaway password generator for tests. */
   readonly randomPassword?: () => string;
+  /** Override the binding-secret generator for tests. */
+  readonly randomSecret?: () => string;
+  /** Sleep used to hold the response floor. Injected in tests. */
+  readonly sleep?: (ms: number) => Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -93,21 +126,6 @@ function badRequest(): LambdaFunctionUrlResult {
   };
 }
 
-/** Returns a generic 429 too-many-requests response. */
-function tooManyRequests(): LambdaFunctionUrlResult {
-  return {
-    statusCode: 429,
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ error: "Too many requests" }),
-  };
-}
-
-/** HMAC-hashes an email address for safe logging (never log raw PII). */
-function hashEmail(email: string): string {
-  const key = process.env[RuntimeEnv.DOMAIN] ?? "vestibulum-log-key";
-  return crypto.createHmac("sha256", key).update(email).digest("hex").slice(0, 12);
-}
-
 /**
  * Default throwaway password for SignUp. The user never sees or uses it — the
  * actual authentication is the CUSTOM_AUTH magic-link challenge — but Cognito
@@ -118,6 +136,9 @@ function defaultRandomPassword(): string {
   return `Aa1!${crypto.randomBytes(24).toString("base64url")}`;
 }
 
+/** Closed set of request outcomes, emitted as a metric (never logged per caller). */
+type RequestOutcome = "accepted" | "rate_limited" | "auth_error" | "store_error";
+
 /**
  * Create an auth-login Lambda Function URL handler.
  *
@@ -125,9 +146,11 @@ function defaultRandomPassword(): string {
  * 1. Origin header CSRF check (403 on failure; 500-class on missing DOMAIN).
  * 2. Parse JSON body { email } (400 on malformed).
  * 3. Resolve client IP from the LAST x-forwarded-for hop (403 if absent).
- * 4. Per-IP rate limit (429 when over).
- * 5. SignUp (errors swallowed for enumeration parity) + InitiateAuth.
- * 6. Return { session } on success; generic auth-failed otherwise.
+ * 4. From here on, hold the response for at least `SIGNIN_FLOOR_MS` and answer
+ *    `202 {}` + binding cookie whatever happens:
+ *    a. Per-IP rate limit (over limit → no Cognito call, no session).
+ *    b. SignUp (errors swallowed for enumeration parity) + InitiateAuth.
+ *    c. Store `{ session, username }` under `SHA-256(b)`.
  */
 export function createAuthLoginHandler(deps: AuthLoginHandlerDeps = {}) {
   let defaultCognitoClient: CognitoIdentityProviderClient | undefined;
@@ -147,6 +170,46 @@ export function createAuthLoginHandler(deps: AuthLoginHandlerDeps = {}) {
 
   const nowMs = deps.nowMs ?? (() => Date.now());
   const randomPassword = deps.randomPassword ?? defaultRandomPassword;
+  const randomSecret = deps.randomSecret ?? newBindingSecret;
+  const sleep = deps.sleep ?? realSleep;
+
+  /** SignUp (swallowed) + InitiateAuth. Returns null when no session results. */
+  async function startAuth(
+    clientId: string,
+    email: string,
+  ): Promise<{ session: string; username: string } | null> {
+    // SignUp is idempotent-ish here: a returning user already exists
+    // (UsernameExistsException) and a disallowed domain is rejected by the
+    // PreSignUp trigger. We swallow ALL SignUp errors so that "already
+    // registered", "domain not allowed", and "freshly created" are
+    // indistinguishable to the caller — that's the enumeration-parity property.
+    try {
+      await getCognitoClient().send(
+        new SignUpCommand({
+          ClientId: clientId,
+          Username: email,
+          Password: randomPassword(),
+          UserAttributes: [{ Name: "email", Value: email }],
+        }),
+      );
+    } catch {
+      // Intentionally ignored — see comment above.
+    }
+
+    const result: InitiateAuthCommandOutput = await getCognitoClient().send(
+      new InitiateAuthCommand({
+        AuthFlow: "CUSTOM_AUTH",
+        ClientId: clientId,
+        AuthParameters: { USERNAME: email },
+      }),
+    );
+    const session = result.Session;
+    if (typeof session !== "string" || session === "") return null;
+    // RespondToAuthChallenge needs USERNAME. Prefer the value Cognito echoes
+    // (the pool's real username, not the address); fall back to the address.
+    const echoed = result.ChallengeParameters?.["USERNAME"];
+    return { session, username: typeof echoed === "string" && echoed !== "" ? echoed : email };
+  }
 
   return async function handler(event: LambdaFunctionUrlEvent): Promise<LambdaFunctionUrlResult> {
     const headers = event.headers ?? {};
@@ -207,82 +270,87 @@ export function createAuthLoginHandler(deps: AuthLoginHandlerDeps = {}) {
       return forbidden();
     }
 
-    // ------------------------------------------------------------------
-    // 4. Per-IP rate limit.
-    // ------------------------------------------------------------------
+    // Deployment configuration. A misconfigured function fails the same way for
+    // every caller, so this reveals nothing about any address.
     const rateLimitTable = process.env[RuntimeEnv.RATE_LIMIT_TABLE_NAME];
-    if (rateLimitTable === undefined || rateLimitTable === "") {
-      console.error("auth-login: VESTIBULUM_RATE_LIMIT_TABLE not set");
-      return authFailed();
-    }
-    const limit = parseInt(process.env[RuntimeEnv.LOGIN_IP_PER_WINDOW] ?? String(DEFAULT_LOGINS_PER_WINDOW), 10);
-
-    const allowed = await tryConsumeIpRateLimit({
-      client: getDynamoClient(),
-      tableName: rateLimitTable,
-      ip: clientIp,
-      limit,
-      nowMs: nowMs(),
-    });
-    if (!allowed) {
-      return tooManyRequests();
-    }
-
-    // ------------------------------------------------------------------
-    // 5. SignUp + InitiateAuth.
-    // ------------------------------------------------------------------
+    const bindingTable = process.env[RuntimeEnv.BINDING_TABLE_NAME];
     const clientId = process.env[RuntimeEnv.COGNITO_CLIENT_ID];
-    if (clientId === undefined || clientId === "") {
-      console.error("auth-login: VESTIBULUM_CLIENT_ID not set");
+    const ttlMinutes = parseTokenTtlMinutes(process.env[RuntimeEnv.TOKEN_TTL_MINUTES]);
+    if (
+      rateLimitTable === undefined ||
+      rateLimitTable === "" ||
+      bindingTable === undefined ||
+      bindingTable === "" ||
+      clientId === undefined ||
+      clientId === "" ||
+      ttlMinutes === undefined
+    ) {
+      console.error("auth-login: required configuration missing or invalid");
       return authFailed();
     }
-
-    // SignUp is idempotent-ish here: a returning user already exists
-    // (UsernameExistsException) and a disallowed domain is rejected by the
-    // PreSignUp trigger. We swallow ALL SignUp errors so that "already
-    // registered", "domain not allowed", and "freshly created" are
-    // indistinguishable to the caller — that's the enumeration-parity property.
-    // InitiateAuth below is the single observable outcome.
-    try {
-      await getCognitoClient().send(
-        new SignUpCommand({
-          ClientId: clientId,
-          Username: email,
-          Password: randomPassword(),
-          UserAttributes: [{ Name: "email", Value: email }],
-        }),
-      );
-    } catch {
-      // Intentionally ignored — see comment above.
-    }
-
-    let initiateResult: InitiateAuthCommandOutput;
-    try {
-      initiateResult = await getCognitoClient().send(
-        new InitiateAuthCommand({
-          AuthFlow: "CUSTOM_AUTH",
-          ClientId: clientId,
-          AuthParameters: { USERNAME: email },
-        }),
-      );
-    } catch {
-      console.error(`auth-login: InitiateAuth error for email-hash=${hashEmail(email)}`);
-      return authFailed();
-    }
-
-    const session = initiateResult.Session;
-    if (typeof session !== "string" || session === "") {
-      console.error(`auth-login: missing Session for email-hash=${hashEmail(email)}`);
-      return authFailed();
-    }
+    const limit = parseInt(
+      process.env[RuntimeEnv.LOGIN_IP_PER_WINDOW] ?? String(DEFAULT_LOGINS_PER_WINDOW),
+      10,
+    );
+    const floorMs = parseMs(process.env[RuntimeEnv.SIGNIN_FLOOR_MS], DEFAULT_SIGNIN_FLOOR_MS);
 
     // ------------------------------------------------------------------
-    // 6. Return the Cognito session for the browser to answer the challenge.
+    // 4. From here every outcome is the same 202, after the floor.
     // ------------------------------------------------------------------
-    return {
-      statusCode: 200,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session }),
-    };
+    return withFloor(floorMs, nowMs, sleep, async () => {
+      const secret = randomSecret();
+      const bindingHash = hashBindingSecret(secret);
+      let outcome: RequestOutcome = "accepted";
+      let started: { session: string; username: string } | null = null;
+
+      try {
+        const allowed = await tryConsumeIpRateLimit({
+          client: getDynamoClient(),
+          tableName: rateLimitTable,
+          ip: clientIp,
+          limit,
+          nowMs: nowMs(),
+        });
+        if (allowed) {
+          started = await startAuth(clientId, email);
+          if (started === null) outcome = "auth_error";
+        } else {
+          outcome = "rate_limited";
+        }
+      } catch {
+        // Never log the address or the error body: closed enum only.
+        outcome = "auth_error";
+        started = null;
+      }
+
+      // The row is written even with no session, so the redeem path and its
+      // timing do not depend on whether Cognito produced one.
+      try {
+        await getDynamoClient().send(
+          new PutItemCommand({
+            TableName: bindingTable,
+            Item: {
+              binding_hash: { S: bindingHash },
+              [TTL_ATTRIBUTE]: { N: String(Math.floor(nowMs() / 1000) + ttlMinutes * 60) },
+              ...(started !== null
+                ? { session: { S: started.session }, username: { S: started.username } }
+                : {}),
+            },
+            ConditionExpression: "attribute_not_exists(binding_hash)",
+          }),
+        );
+      } catch {
+        outcome = "store_error";
+      }
+
+      emitSigninMetric("SignInRequest", { outcome });
+
+      return {
+        statusCode: 202,
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+        cookies: [buildBindingCookie(secret, ttlMinutes * 60)],
+        body: "{}",
+      };
+    });
   };
 }

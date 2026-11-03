@@ -272,7 +272,7 @@ export class EdgeFunction extends Construct {
     this.bundlePath = bundleOutDir;
 
     this.edgeFunction = new cloudfront.experimental.EdgeFunction(this, "Fn", {
-      runtime: lambda.Runtime.NODEJS_20_X,
+      runtime: lambda.Runtime.NODEJS_22_X,
       handler: "index.handler",
       code: lambda.Code.fromAsset(bundleOutDir),
       // Intentionally NO `environment`. Lambda@Edge rejects env vars.
@@ -328,7 +328,7 @@ interface BuildEdgeBundleArgs {
  *
  * Determinism: the build options mirror the ones in
  * `scripts/build-bundles.ts` (`minify: true`, `legalComments: 'none'`,
- * `sourcemap: false`, `keepNames: false`, `target: node20`,
+ * `sourcemap: false`, `keepNames: false`, `target: node22`,
  * `drop: ['console']`). The `aws-jwt-verify` package is INLINED (not
  * externalised) — L@E does not provide it.
  */
@@ -406,7 +406,7 @@ function buildEdgeBundleSync(args: BuildEdgeBundleArgs): string {
     bundle: true,
     platform: "node",
     format: "esm",
-    target: "node20",
+    target: "node22",
     minify: true,
     sourcemap: false,
     legalComments: "none",

@@ -4,28 +4,41 @@
  * The magic-link email points the user's browser at
  * `/login/callback#token=<token>`. This page:
  *   1. Reads the token from the URL *fragment* (never the query string), then
- *      scrubs it from history via `replaceState` so it isn't leaked.
- *   2. Reads the `{ email, session }` stashed by login.js in sessionStorage
- *      (the link must be opened in the same browser that started sign-in).
- *   3. POSTs `{ session, challengeAnswer: token, email }` to `/auth-verify`,
- *      which calls Cognito `RespondToAuthChallenge` and sets the HttpOnly
- *      auth cookies. `credentials: "include"` so the cookies stick; the
- *      browser's same-origin `Origin` header satisfies auth-verify's CSRF
- *      check.
+ *      scrubs it from history via `replaceState` so it isn't leaked. The token
+ *      is held in memory only.
+ *   2. Renders ONE button. Loading the page sends nothing: link scanners,
+ *      previewers and browser prerendering can run page scripts — sometimes in
+ *      the user's own profile — so redemption must wait for a real click
+ *      (`signin_redeem_requires_user_gesture`). While `document.prerendering`
+ *      is true the page does not even read the fragment.
+ *   3. On click, POSTs `{ answer: token }` to `/auth-verify`. Nothing else is
+ *      sent: the pending Cognito session is held server-side and bound to the
+ *      browser that asked by the HttpOnly `__Host-signin` cookie, which the
+ *      browser attaches itself. A link opened in a different browser therefore
+ *      fails without consuming anything.
  *   4. On success, redirects to `/`.
  */
 
-const STORAGE_KEY = "vestibulum.magicLink";
+/** In-memory only; cleared as soon as it has been sent. */
+let token = null;
 
-/** Replace the spinner with an error message + a link back to /login. */
+const confirmEl = document.getElementById("confirm");
+const spinnerEl = document.getElementById("spinner");
+const messageEl = document.getElementById("message");
+const buttonEl = document.getElementById("sign-in");
+
+/** Show a message and a link back to /login; hide the button. */
 function fail(message) {
-  document.body.innerHTML = "";
+  token = null;
+  spinnerEl.hidden = true;
+  confirmEl.hidden = true;
+  messageEl.textContent = "";
   const p = document.createElement("p");
   p.textContent = message;
   const a = document.createElement("a");
   a.href = "/login";
-  a.textContent = "Return to sign in";
-  document.body.append(p, a);
+  a.textContent = "Request a new sign-in link";
+  messageEl.append(p, a);
 }
 
 /** Extract `token` from the URL fragment (`#token=...`). */
@@ -34,8 +47,9 @@ function readTokenFromFragment() {
   return new URLSearchParams(hash).get("token");
 }
 
-async function complete() {
-  const token = readTokenFromFragment();
+/** Read the fragment, scrub it, and offer the button. Sends nothing. */
+function prepare() {
+  token = readTokenFromFragment();
   // Scrub the token from the address bar / history immediately.
   history.replaceState(null, "", window.location.pathname);
 
@@ -43,24 +57,20 @@ async function complete() {
     fail("This sign-in link is invalid or has expired.");
     return;
   }
+  spinnerEl.hidden = true;
+  confirmEl.hidden = false;
+  buttonEl.focus();
+}
 
-  let stored;
-  try {
-    stored = JSON.parse(sessionStorage.getItem(STORAGE_KEY) ?? "null");
-  } catch {
-    stored = null;
-  }
-  if (stored === null || typeof stored.email !== "string" || typeof stored.session !== "string") {
-    fail("Please open this link in the same browser you started sign-in from.");
-    return;
-  }
+/** Click handler: the only place a redemption request is ever sent. */
+async function redeem() {
+  const answer = token;
+  if (answer === null) return;
+  token = null;
+  buttonEl.disabled = true;
 
   try {
-    const body = JSON.stringify({
-      session: stored.session,
-      challengeAnswer: token,
-      email: stored.email,
-    });
+    const body = JSON.stringify({ answer });
     // `/auth-verify` is a Lambda Function URL behind CloudFront OAC. AWS
     // requires POST clients to send the SHA-256 of the body in the
     // `x-amz-content-sha256` header (Lambda Function URLs reject unsigned
@@ -72,7 +82,7 @@ async function complete() {
       .join("");
     const res = await fetch("/auth-verify", {
       method: "POST",
-      credentials: "include",
+      credentials: "same-origin",
       headers: {
         "Content-Type": "application/json",
         "x-amz-content-sha256": payloadHash,
@@ -80,14 +90,26 @@ async function complete() {
       body,
     });
     if (!res.ok) {
-      fail("This sign-in link is invalid or has expired.");
+      fail(
+        "This sign-in link is invalid, has expired, or was opened in a different browser " +
+          "than the one you asked from. Open it in that browser, or request a new link.",
+      );
       return;
     }
-    sessionStorage.removeItem(STORAGE_KEY);
     window.location.replace("/");
   } catch {
-    fail("Something went wrong completing sign-in. Please try again.");
+    fail("Something went wrong completing sign-in. Please request a new link.");
   }
 }
 
-complete();
+buttonEl.addEventListener("click", () => {
+  void redeem();
+});
+
+// A prerendered page is loaded without the user having navigated to it: wait
+// until it is actually shown before touching the fragment.
+if (document.prerendering === true) {
+  document.addEventListener("prerenderingchange", prepare, { once: true });
+} else {
+  prepare();
+}

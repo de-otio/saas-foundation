@@ -10,15 +10,21 @@
  * that fails verification, and — critically — sends no mail.
  */
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mockClient } from "aws-sdk-client-mock";
-import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import {
+  DynamoDBClient,
+  GetItemCommand,
+  PutItemCommand,
+  UpdateItemCommand,
+} from "@aws-sdk/client-dynamodb";
 import { SESClient } from "@aws-sdk/client-ses";
 
 import {
   createCreateAuthChallengeHandler,
   type CreateAuthChallengeEvent,
 } from "../../../../src/lambda/handlers/create-auth-challenge/index.js";
+import { RuntimeEnv } from "../../../../src/lambda/shared/runtime-env.js";
 
 const ddbMock = mockClient(DynamoDBClient);
 const sesMock = mockClient(SESClient);
@@ -33,24 +39,32 @@ function phantomUserEvent(userName: string): CreateAuthChallengeEvent {
 }
 
 describe("createCreateAuthChallengeHandler — unknown user (no email attribute)", () => {
+  beforeEach(() => {
+    process.env[RuntimeEnv.TOKEN_TABLE_NAME] = "tokens";
+    process.env[RuntimeEnv.RATE_LIMIT_TABLE_NAME] = "ratelimit";
+    process.env[RuntimeEnv.DENYLIST_TABLE_NAME] = "denylist";
+    process.env[RuntimeEnv.SES_FROM] = "login@example.com";
+    process.env[RuntimeEnv.DOMAIN] = "app.example.com";
+    ddbMock.on(GetItemCommand).resolves({});
+    ddbMock.on(UpdateItemCommand).resolves({});
+  });
+
   afterEach(() => {
     ddbMock.reset();
     sesMock.reset();
   });
 
-  it("returns a fail-closed challenge instead of throwing (no 400 enumeration oracle)", async () => {
-    const handler = createCreateAuthChallengeHandler({
+  function handlerUnderTest() {
+    return createCreateAuthChallengeHandler({
       dynamodb: ddbMock as unknown as DynamoDBClient,
       ses: sesMock as unknown as SESClient,
-      // Must never be consulted on this path — resolving the HMAC key would be
-      // a Secrets Manager round-trip we deliberately skip for unknown users.
-      resolveHmacKey: () => {
-        throw new Error("resolveHmacKey must not be called for the unknown-user path");
-      },
+      sleep: () => Promise.resolve(), // no real response floor in this test
+      resolveHmacKey: () => Promise.resolve("test-hmac-key-not-a-secret"),
     });
+  }
 
-    const event = phantomUserEvent("nobody@probe.example");
-    const result = await handler(event);
+  it("returns a fail-closed challenge instead of throwing (no 400 enumeration oracle)", async () => {
+    const result = await handlerUnderTest()(phantomUserEvent("nobody@probe.example"));
 
     // Same shape as the denylist / rate-limit fail-closed paths: looks normal,
     // but the verifier rejects it (token_hash "denied").
@@ -62,31 +76,25 @@ describe("createCreateAuthChallengeHandler — unknown user (no email attribute)
   });
 
   it("sends no email and writes no token for an unknown address", async () => {
-    const handler = createCreateAuthChallengeHandler({
-      dynamodb: ddbMock as unknown as DynamoDBClient,
-      ses: sesMock as unknown as SESClient,
-      resolveHmacKey: () => {
-        throw new Error("must not be called");
-      },
-    });
+    await handlerUnderTest()(phantomUserEvent("nobody@probe.example"));
 
-    await handler(phantomUserEvent("nobody@probe.example"));
-
-    // The whole point: an attacker pumping InitiateAuth for arbitrary addresses
-    // triggers zero SES sends and zero token-table writes.
+    // The privacy property: an attacker pumping InitiateAuth for arbitrary
+    // addresses triggers zero SES sends and zero token-table writes.
     expect(sesMock.calls()).toHaveLength(0);
-    expect(ddbMock.calls()).toHaveLength(0);
+    expect(ddbMock.commandCalls(PutItemCommand)).toHaveLength(0);
+  });
+
+  it("does the same reads as a real caller (denylist lookup + counter write), so it is not faster", async () => {
+    // Previously this path returned before any DynamoDB call, which made unknown
+    // addresses measurably faster than real ones (signin_request_indistinguishable).
+    await handlerUnderTest()(phantomUserEvent("nobody@probe.example"));
+    expect(ddbMock.calls().map((c) => c.args[0].constructor.name)).toEqual([
+      "GetItemCommand",
+      "UpdateItemCommand",
+    ]);
   });
 
   it("does not throw (the pre-fix behaviour was a thrown error → 400)", async () => {
-    const handler = createCreateAuthChallengeHandler({
-      dynamodb: ddbMock as unknown as DynamoDBClient,
-      ses: sesMock as unknown as SESClient,
-      resolveHmacKey: () => {
-        throw new Error("must not be called");
-      },
-    });
-
-    await expect(handler(phantomUserEvent("nobody@probe.example"))).resolves.toBeDefined();
+    await expect(handlerUnderTest()(phantomUserEvent("nobody@probe.example"))).resolves.toBeDefined();
   });
 });

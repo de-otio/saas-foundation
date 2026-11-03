@@ -85,6 +85,15 @@ exports[`MagicLinkAuthSite cdk-nag snapshot > produces the expected nag findings
   },
   {
     "entry": {
+      "data": "AwsSolutions-DDB3: The DynamoDB table does not have Point-in-time Recovery enabled.
+",
+      "type": "aws:cdk:warning",
+    },
+    "id": "/AuthSiteNagStack/Identity/BindingTable/Resource",
+    "level": "warning",
+  },
+  {
+    "entry": {
       "data": "AwsSolutions-SNS3: The SNS Topic does not require publishers to use SSL.
 ",
       "type": "aws:cdk:error",
@@ -99,42 +108,6 @@ exports[`MagicLinkAuthSite cdk-nag snapshot > produces the expected nag findings
       "type": "aws:cdk:error",
     },
     "id": "/AuthSiteNagStack/OriginBucket/Policy/Resource",
-    "level": "error",
-  },
-  {
-    "entry": {
-      "data": "AwsSolutions-L1: The non-container Lambda function is not configured to use the latest runtime version.
-",
-      "type": "aws:cdk:error",
-    },
-    "id": "/AuthSiteNagStack/Site/AuthVerifyFn/Resource",
-    "level": "error",
-  },
-  {
-    "entry": {
-      "data": "AwsSolutions-L1: The non-container Lambda function is not configured to use the latest runtime version.
-",
-      "type": "aws:cdk:error",
-    },
-    "id": "/AuthSiteNagStack/Site/AuthSignoutFn/Resource",
-    "level": "error",
-  },
-  {
-    "entry": {
-      "data": "AwsSolutions-L1: The non-container Lambda function is not configured to use the latest runtime version.
-",
-      "type": "aws:cdk:error",
-    },
-    "id": "/AuthSiteNagStack/Site/AuthLoginFn/Resource",
-    "level": "error",
-  },
-  {
-    "entry": {
-      "data": "AwsSolutions-L1: The non-container Lambda function is not configured to use the latest runtime version.
-",
-      "type": "aws:cdk:error",
-    },
-    "id": "/AuthSiteNagStack/Site/CheckAuthConfigBakerFn/Resource",
     "level": "error",
   },
   {

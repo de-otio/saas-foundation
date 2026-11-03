@@ -3,11 +3,20 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="referrer" content="no-referrer" />
     <title>Sign In</title>
     <link rel="stylesheet" href="/login-callback.css" />
   </head>
   <body>
-    <div class="spinner"></div>
+    <main>
+      <div class="spinner" id="spinner"></div>
+      <section class="confirm" id="confirm" hidden>
+        <h1>Finish signing in</h1>
+        <p>Press the button to sign in on this browser.</p>
+        <button type="button" id="sign-in" class="submit-button">Sign in</button>
+      </section>
+      <div class="message" id="message" role="status" aria-live="polite"></div>
+    </main>
     <noscript>
       <p>JavaScript is required to complete authentication. Please enable JavaScript and try again.</p>
     </noscript>
