@@ -1,5 +1,5 @@
 {
-  "vestibulumVersion": "0.5.0",
+  "vestibulumVersion": "0.6.0",
   "bundles": {
     "admin": {
       "sha256": "sha256:753a82d58533fae8e93ce0797f58a6fd35265480dd79e6fb343baa87a934e866",

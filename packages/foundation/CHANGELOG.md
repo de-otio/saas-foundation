@@ -1,5 +1,22 @@
 # @de-otio/saas-foundation
 
+## 0.4.4
+
+### Patch Changes
+
+- 661bba1: Move the session-cookie helpers to `cookie` 2. `parseCookieHeader` now calls
+  `parseCookie` and `serializeSetCookie` calls `stringifySetCookie`, since
+  cookie 2 renamed its API. The exported signatures and the default attributes
+  (`HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`) are unchanged.
+
+  One observable difference in the emitted `Set-Cookie` header: cookie 2 no
+  longer percent-encodes characters that RFC 6265 allows in a cookie value, so
+  the base64 session envelope is written with literal `+`, `/` and `=` instead of
+  `%2B`, `%2F` and `%3D`. Both encodings parse to the same value with
+  `parseCookieHeader` (and with cookie 1), so cookies set before the upgrade still
+  unseal. A consumer that reads the raw header without percent-decoding now sees
+  the envelope as-is.
+
 ## 0.4.3
 
 ### Patch Changes
@@ -23,11 +40,11 @@
   Deliberately narrow. Testing the SDK (3.1101) rather than assuming showed most
   of what looked missing is already there:
 
-  | Concern | Status |
-  | --- | --- |
-  | Endpoint | **Not added.** The SDK resolves `AWS_ENDPOINT_URL_S3` and generic `AWS_ENDPOINT_URL` natively via `@smithy/core`. Verified by probe: a client built with `{ region }` alone requested the host from the env var. |
+  | Concern               | Status                                                                                                                                                                                                                                                                                                                         |
+  | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+  | Endpoint              | **Not added.** The SDK resolves `AWS_ENDPOINT_URL_S3` and generic `AWS_ENDPOINT_URL` natively via `@smithy/core`. Verified by probe: a client built with `{ region }` alone requested the host from the env var.                                                                                                               |
   | Path-style addressing | Added as an **escape hatch** (`S3_FORCE_PATH_STYLE`), not a requirement. There is no `AWS_S3_FORCE_PATH_STYLE` env var — the SDK ignores it, only the constructor flag works — and most S3-compatible providers wildcard bucket DNS, so virtual-hosted addressing already resolves. Only the exact string `"true"` enables it. |
-  | Credentials | The real gap; the only thing this change adds. |
+  | Credentials           | The real gap; the only thing this change adds.                                                                                                                                                                                                                                                                                 |
 
   **No change for AWS deployments.** With no `S3_*` variable set, the factory
   returns what it always did: region only, ambient credential chain.
