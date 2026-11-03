@@ -14,7 +14,7 @@
 import * as fs from "node:fs";
 
 import * as cdk from "aws-cdk-lib";
-import { Match, Template } from "aws-cdk-lib/assertions";
+import { Template } from "aws-cdk-lib/assertions";
 import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -288,12 +288,23 @@ describe("runtimes (U14)", () => {
     },
   );
 
-  it("the Lambda@Edge check-auth function stays on a runtime Lambda@Edge is known to accept (nodejs22.x)", () => {
-    template.hasResourceProperties("AWS::Lambda::Function", {
-      Runtime: "nodejs22.x",
-      Handler: "index.handler",
-      Code: Match.anyValue(),
-    });
+  /** The check-auth Lambda@Edge function: the one whose name the config bake targets. */
+  const edgeFunction = () => {
+    const bake = Object.values(template.findResources("Custom::VestibulumCheckAuthConfig"))[0]!;
+    const target = JSON.stringify((bake.Properties as { FunctionName: unknown }).FunctionName);
+    const [id, fn] = Object.entries(template.findResources("AWS::Lambda::Function")).find(([logicalId]) =>
+      target.includes(logicalId),
+    )!;
+    return { id, runtime: (fn.Properties as { Runtime: string }).Runtime, bake };
+  };
+
+  it("the Lambda@Edge check-auth function runs nodejs24.x (verified live: CloudFront accepts it)", () => {
+    expect(edgeFunction().runtime).toBe("nodejs24.x");
+  });
+
+  it("the config bake re-runs when the edge runtime changes (its Runtime input is the edge function's runtime)", () => {
+    const { runtime, bake } = edgeFunction();
+    expect((bake.Properties as { Runtime?: string }).Runtime).toBe(runtime);
   });
 
   it("no regional function is on a runtime older than nodejs22.x", () => {

@@ -132,9 +132,9 @@ describe("createFloorMs — the CreateAuthChallenge response floor", () => {
     return (fns[id]!.Properties as { Environment: { Variables: Record<string, unknown> }; Timeout: number });
   };
 
-  it("defaults to 400 ms (UNMEASURED: to be measured live) and agrees with the runtime default", () => {
-    expect(createEnv(build().template).Environment.Variables[CdkRuntimeEnv.CREATE_FLOOR_MS]).toBe("400");
-    expect(runtime.DEFAULT_CREATE_FLOOR_MS).toBe(400);
+  it("defaults to 1000 ms (live: at 400 ms the SES sending path exceeded the floor, max 870 ms) and agrees with the runtime default", () => {
+    expect(createEnv(build().template).Environment.Variables[CdkRuntimeEnv.CREATE_FLOOR_MS]).toBe("1000");
+    expect(runtime.DEFAULT_CREATE_FLOOR_MS).toBe(1000);
   });
 
   it("follows createFloorMs on the Create trigger only", () => {

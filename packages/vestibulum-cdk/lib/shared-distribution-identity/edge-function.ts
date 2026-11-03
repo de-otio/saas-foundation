@@ -272,7 +272,9 @@ export class EdgeFunction extends Construct {
     this.bundlePath = bundleOutDir;
 
     this.edgeFunction = new cloudfront.experimental.EdgeFunction(this, "Fn", {
-      runtime: lambda.Runtime.NODEJS_22_X,
+      // NODEJS_24_X: Lambda@Edge accepts it (verified live on the single-tenant
+      // check-auth gate). The bundle targets node22 and runs unchanged on it.
+      runtime: lambda.Runtime.NODEJS_24_X,
       handler: "index.handler",
       code: lambda.Code.fromAsset(bundleOutDir),
       // Intentionally NO `environment`. Lambda@Edge rejects env vars.

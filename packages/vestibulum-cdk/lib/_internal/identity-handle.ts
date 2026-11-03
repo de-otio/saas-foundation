@@ -78,6 +78,11 @@ export interface IMagicLinkIdentity {
    */
   readonly enrollment: "admin-only" | "self-signup";
   /**
+   * Host name the mailed link points at. Optional for hand-rolled handles;
+   * when present, `MagicLinkAuthSite` requires it to equal its `domain`.
+   */
+  readonly linkDomain?: string;
+  /**
    * Pool-wide default refresh-token validity. `auth-signout` accepts an expired
    * ID token up to this far in the past, so a user whose ID token lapsed can
    * still revoke their refresh token. (A per-site `refreshTokenValidity`

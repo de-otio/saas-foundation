@@ -378,23 +378,21 @@ describe("MagicLinkAuthSite", () => {
       expect(hasReadWrite).toBe(true);
     });
 
-    it("adds the AuthLoginOacInvokeFunction permission for CloudFront, scoped to the distribution", () => {
-      const perms = template.findResources("AWS::Lambda::Permission");
-      const cfPerms = Object.values(perms)
-        .map((r) => r.Properties as { Action: string; Principal: string; SourceArn?: unknown });
-      const invoke = cfPerms.filter(
-        (p) => p.Principal === "cloudfront.amazonaws.com" && p.Action === "lambda:InvokeFunction",
-      );
-      expect(invoke.length).toBeGreaterThanOrEqual(3);
-      for (const p of invoke) {
-        expect(p.SourceArn, "InvokeFunction SourceArn").toBeTruthy();
+    it("CloudFront may invoke the three endpoints only through their Function URLs, from this distribution", () => {
+      // Verified live: OAC POSTs succeed with exactly these grants.
+      const cfInvoke = Object.values(template.findResources("AWS::Lambda::Permission"))
+        .map((r) => r.Properties as {
+          Action: string;
+          Principal: string;
+          SourceArn?: unknown;
+          InvokedViaFunctionUrl?: boolean;
+        })
+        .filter((p) => p.Principal === "cloudfront.amazonaws.com" && p.Action === "lambda:InvokeFunction");
+      expect(cfInvoke).toHaveLength(3);
+      for (const p of cfInvoke) {
+        expect(p.InvokedViaFunctionUrl, "no unconditioned InvokeFunction grant").toBe(true);
+        expect(p.SourceArn, "scoped to the distribution").toBeTruthy();
       }
-      // aws-cdk-lib's own grant is restricted to calls made through the Function URL.
-      const viaUrl = Object.values(perms).filter(
-        (r) =>
-          (r.Properties as { InvokedViaFunctionUrl?: boolean }).InvokedViaFunctionUrl === true,
-      );
-      expect(viaUrl.length).toBeGreaterThanOrEqual(3);
     });
   });
 

@@ -42,6 +42,7 @@ import {
   Duration,
   RemovalPolicy,
   Stack,
+  Token,
   aws_cloudfront as cloudfront,
   aws_cloudfront_origins as origins,
   aws_cognito as cognito,
@@ -300,6 +301,21 @@ export class MagicLinkAuthSite extends Construct {
     // regardless (Agent C's scope); vestibulum-cdk app clients are
     // public (SPA / browser).
     // -------------------------------------------------------------------
+    // The mailed link is built from the identity's linkDomain; if that is not
+    // this site's domain, every link points at a host that does not serve
+    // /login/callback (found live: sender apex vs an `app.` site domain).
+    if (
+      identity.linkDomain !== undefined &&
+      !Token.isUnresolved(identity.linkDomain) &&
+      !Token.isUnresolved(domain) &&
+      identity.linkDomain !== domain
+    ) {
+      throw new Error(
+        `MagicLinkAuthSite: the identity's linkDomain ("${identity.linkDomain}") must equal the site domain ("${domain}"); ` +
+          `set MagicLinkIdentityProps.linkDomain to "${domain}".`,
+      );
+    }
+
     this.websiteClient = identity.addAppClient("WebsiteClient", {
       oauth: {
         flows: { authorizationCodeGrant: true },
@@ -494,16 +510,15 @@ export class MagicLinkAuthSite extends Construct {
     // ['console'] applied). The default basic-execution role grants
     // logs:* — Mandatory Mitigation 1 strips it.
     // -------------------------------------------------------------------
+    // NODEJS_24_X, verified live: CloudFront accepted a nodejs24.x viewer-request
+    // association, and the gate redirected an unauthenticated request and served
+    // a signed-in one. Never node20: the inlined undici destructures
+    // `markAsUncloneable` from `node:worker_threads` (Node 22.5+), so on node20
+    // the function dies on init with a 503 LambdaExecutionError. The bundle
+    // stays built with target node22, which runs unchanged on node24.
+    const edgeRuntime = lambda.Runtime.NODEJS_24_X;
     const checkAuthFn = new cloudfront.experimental.EdgeFunction(this, "CheckAuthFn", {
-      // NODEJS_22_X (not _20_X): the inlined bundle pulls in undici, whose
-      // request internals destructure `markAsUncloneable` from
-      // `node:worker_threads` — a Node 22.5+ API. On the node20 runtime that is
-      // undefined and the function dies on init with
-      // `Vt.util.markAsUncloneable is not a function`, returning 503
-      // LambdaExecutionError. Lambda@Edge supports the current node22 runtime
-      // (the SES/auth-site sibling functions already use it), so run check-auth
-      // there too. The bundle is built with target node22 to match.
-      runtime: lambda.Runtime.NODEJS_22_X,
+      runtime: edgeRuntime,
       handler: "index.handler",
       code: lambda.Code.fromAsset(bundlePaths["check-auth"]),
     });
@@ -626,6 +641,10 @@ export class MagicLinkAuthSite extends Construct {
         // Forces a re-bake when the base bundle changes (e.g. a vestibulum
         // upgrade) even if the config values are unchanged.
         BaseSha: manifest.bundles["check-auth"]?.sha256 ?? "unknown",
+        // Forces a re-bake when the edge runtime changes. Found live: a runtime
+        // change alone published a new $LATEST but CloudFront kept serving the
+        // previously baked version on the old runtime.
+        Runtime: edgeRuntime.name,
       },
     });
     // Bake only after the function exists.
@@ -943,41 +962,14 @@ export class MagicLinkAuthSite extends Construct {
       markWafIntentionallyDisabled(this.distribution.node.defaultChild as Construct);
     }
 
-    // OAC POST support. CloudFront OAC for a Lambda Function URL requires the
-    // CloudFront service principal to hold BOTH `lambda:InvokeFunctionUrl`
-    // AND `lambda:InvokeFunction`. aws-cdk-lib >= 2.275 adds both from
-    // `FunctionUrlOrigin.withOriginAccessControl` (the second with
-    // `InvokedViaFunctionUrl: true`); the explicit grants below predate that and
-    // are now redundant — and broader, because they carry no such condition.
-    // They are kept so this change does not alter the deployed policy before a
-    // live OAC POST has confirmed the conditioned grant alone is enough
-    // (TODO: remove once verified in dev). Without the latter, a correctly-signed POST is
-    // rejected at the Function URL auth layer with `403 Forbidden` and the
-    // handler never runs — so the browser sign-in POST to `/auth-verify` (and a
-    // POST sign-out to `/auth-signout`) cannot complete. Both grants are scoped
-    // to this distribution via `AWS:SourceArn`.
-    // See: AWS docs — "Restrict access to an AWS Lambda function URL origin"
-    // (grants both `lambda:InvokeFunctionUrl` and `lambda:InvokeFunction`).
-    const distributionArn = Stack.of(this).formatArn({
-      service: "cloudfront",
-      region: "",
-      resource: "distribution",
-      resourceName: this.distribution.distributionId,
-    });
-    authVerifyFn.addPermission("AuthVerifyOacInvokeFunction", {
-      principal: new iam.ServicePrincipal("cloudfront.amazonaws.com"),
-      action: "lambda:InvokeFunction",
-      sourceArn: distributionArn,
-    });
-    authSignoutFn.addPermission("AuthSignoutOacInvokeFunction", {
-      principal: new iam.ServicePrincipal("cloudfront.amazonaws.com"),
-      action: "lambda:InvokeFunction",
-      sourceArn: distributionArn,
-    });
-    authLoginFn.addPermission("AuthLoginOacInvokeFunction", {
-      principal: new iam.ServicePrincipal("cloudfront.amazonaws.com"),
-      action: "lambda:InvokeFunction",
-      sourceArn: distributionArn,
-    });
+    // OAC POST support. CloudFront OAC for a Lambda Function URL needs the
+    // CloudFront service principal to hold both `lambda:InvokeFunctionUrl` and
+    // `lambda:InvokeFunction`. aws-cdk-lib >= 2.275 adds both from
+    // `FunctionUrlOrigin.withOriginAccessControl`, the second conditioned on
+    // `InvokedViaFunctionUrl: true` and scoped to this distribution. This
+    // construct used to add its own unconditioned `InvokeFunction` grants as
+    // well; verified live (dev, through CloudFront), POSTs to /auth-login,
+    // /auth-verify and /auth-signout succeed with CDK's grants alone, so those
+    // broader grants are gone.
   }
 }

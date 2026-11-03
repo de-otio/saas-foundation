@@ -37,8 +37,15 @@ export const DEFAULT_TOKEN_TTL_MINUTES = 10;
  */
 export const DEFAULT_SIGNIN_FLOOR_MS = 2500;
 
-/** CreateAuthChallenge response floor, so direct Cognito callers see flat latency. */
-export const DEFAULT_CREATE_FLOOR_MS = 400;
+/**
+ * CreateAuthChallenge response floor, so direct Cognito callers see flat latency.
+ *
+ * Measured live (eu-central-1, warm, n≈20 per class) at a 400 ms floor: the
+ * silent path sat on the floor (p90 404 ms), the sending path did not (p90
+ * 439 ms, max 870 ms). The floor must exceed the sending path's p99, so it is
+ * 1000 ms. Re-measure per stage.
+ */
+export const DEFAULT_CREATE_FLOOR_MS = 1000;
 
 /** The token is 43 base64url characters; anything much longer is not an answer. */
 export const MAX_ANSWER_LENGTH = 64;

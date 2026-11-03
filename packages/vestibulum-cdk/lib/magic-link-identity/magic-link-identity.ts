@@ -38,7 +38,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
 
-import { Annotations, CustomResource, Duration, RemovalPolicy, Stack } from "aws-cdk-lib";
+import { Annotations, CustomResource, Duration, RemovalPolicy, Stack, Token } from "aws-cdk-lib";
 import * as cognito from "aws-cdk-lib/aws-cognito";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as iam from "aws-cdk-lib/aws-iam";
@@ -301,6 +301,16 @@ export interface MagicLinkIdentityProps {
   readonly sesIdentitySender: string;
 
   /**
+   * Host name the mailed link points at (`https://<linkDomain>/login/callback#…`).
+   * It must be the `domain` of the {@link MagicLinkAuthSite} that serves
+   * `/login/callback`; the site checks this at synth and fails on a mismatch.
+   * Set it when the site is not served on the sender's domain (for example a
+   * sender `signin@example.com` and a site at `app.example.com`).
+   * @default the domain of `sesIdentitySender`
+   */
+  readonly linkDomain?: string;
+
+  /**
    * Magic-link lifetime in minutes. Three owners enforce it and all follow this
    * one value: the Cognito app client's `AuthSessionValidity`, the binding row
    * and cookie, and the token row's `expires_at` (checked in Verify).
@@ -388,9 +398,10 @@ export interface MagicLinkIdentityProps {
    * to 5000; Cognito gives a trigger at most 5 seconds in total, so keep floor
    * plus work well below that.
    *
-   * **The default (400) has not been measured live** and must be before it is
-   * relied on.
-   * @default 400
+   * The default was measured live: at 400 ms the SES sending path exceeded the
+   * floor (p90 439 ms, max 870 ms) while the silent path did not. Re-measure
+   * per stage (cold starts, SES latency).
+   * @default 1000
    */
   readonly createFloorMs?: number;
 
@@ -609,6 +620,9 @@ export class MagicLinkIdentity extends Construct {
   /** Resolved enrolment mode (always defined — defaults to `'admin-only'`). */
   readonly enrollment: Enrollment;
 
+  /** Host name the mailed link points at (resolved `linkDomain`). */
+  readonly linkDomain: string;
+
   /** SES configuration set whose event destination feeds {@link bounceTopic}. */
   readonly sesConfigurationSet: ses.ConfigurationSet;
 
@@ -698,6 +712,15 @@ export class MagicLinkIdentity extends Construct {
     });
     this.signupMode = props.signupMode ?? "open";
     this.enrollment = validateEnrollment(props.enrollment ?? "admin-only");
+    this.linkDomain = props.linkDomain ?? senderDomain;
+    if (
+      !Token.isUnresolved(this.linkDomain) &&
+      !/^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(this.linkDomain)
+    ) {
+      throw new Error(
+        `MagicLinkIdentity: linkDomain must be a lower-case host name (no scheme, path or port); got "${this.linkDomain}"`,
+      );
+    }
     const allowedRecipientPatterns =
       props.allowedRecipientPatterns === undefined
         ? undefined
@@ -899,10 +922,9 @@ export class MagicLinkIdentity extends Construct {
       // CreateAuthChallenge handler. Without it that handler throws and Cognito
       // returns the generic "Authentication failed". This MUST equal the
       // `domain` passed to MagicLinkAuthSite (which serves `/login/callback`).
-      // Defaulted to the SES sender apex, which equals the site domain in the
-      // apex-aligned topology; a consumer serving the site on a domain other
-      // than the sender apex must align the two.
-      [RuntimeEnv.DOMAIN]: senderDomain,
+      // `linkDomain` defaults to the SES sender's domain; MagicLinkAuthSite
+      // fails the synth when it differs from the site's own `domain`.
+      [RuntimeEnv.DOMAIN]: this.linkDomain,
       [RuntimeEnv.TOKEN_TTL_MINUTES]: String(tokenTtlMinutes),
       [RuntimeEnv.TOKEN_SENDS_PER_WINDOW]: String(tokenSendsPerWindow),
       [RuntimeEnv.TOKEN_SENDS_PER_DAY]: String(tokenSendsPerDay),

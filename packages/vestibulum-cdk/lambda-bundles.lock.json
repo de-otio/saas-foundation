@@ -37,7 +37,7 @@
       "filename": "check-auth-config-baker/index.mjs"
     },
     "create-auth": {
-      "sha256": "sha256:9e6ac8fcfcb2447172f73b7050924a5d3cf9972e430511e174f8213f7633ee8e",
+      "sha256": "sha256:2ed6c371dbbf42334af8f56697d7d2d0f98c0e2cbad51a5eea4d6337689c5db9",
       "sizeBytes": 1601088,
       "filename": "create-auth/index.mjs"
     },

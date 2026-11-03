@@ -31,6 +31,7 @@ export class MockIdentity extends Construct implements IMagicLinkIdentity {
   public readonly bindingTable: dynamodb.ITable;
   public readonly tokenTtlMinutes: number = 10;
   public readonly enrollment: "admin-only" | "self-signup";
+  public readonly linkDomain: string | undefined;
   public readonly defaultRefreshTokenValidity: Duration = Duration.hours(24);
   public readonly bounceTopic: sns.ITopic;
   public readonly preTokenGeneration: undefined = undefined;
@@ -42,10 +43,11 @@ export class MockIdentity extends Construct implements IMagicLinkIdentity {
   public constructor(
     scope: Construct,
     id: string,
-    opts: { readonly enrollment?: "admin-only" | "self-signup" } = {},
+    opts: { readonly enrollment?: "admin-only" | "self-signup"; readonly linkDomain?: string } = {},
   ) {
     super(scope, id);
     this.enrollment = opts.enrollment ?? "admin-only";
+    this.linkDomain = opts.linkDomain;
     this.pool = new cognito.UserPool(this, "Pool", {
       removalPolicy: RemovalPolicy.DESTROY,
     });

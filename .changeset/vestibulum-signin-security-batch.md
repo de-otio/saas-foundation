@@ -106,10 +106,19 @@ Security review follow-ups
   `ses:TenantName` are not emitted.
 - **`/login-config.json` is no longer deployed.** It published the client id,
   region and domain and nothing read it. Redeploying removes the object.
-- **`createFloorMs`** (integer 100-5000, default 400, env
-  `VESTIBULUM_CREATE_FLOOR_MS`) sets the CreateAuthChallenge response floor. The
-  default is unmeasured and must be measured live. The Create function's timeout
+- **`createFloorMs`** (integer 100-5000, default **1000**, was a fixed 400, env
+  `VESTIBULUM_CREATE_FLOOR_MS`) sets the CreateAuthChallenge response floor.
+  Measured live at 400 ms, the SES sending path exceeded it (p90 439 ms, max
+  870 ms) while the silent path did not, a timing tail visible to anyone calling
+  `InitiateAuth` directly with the public client id. The Create function's timeout
   is now 5 s (Cognito's own limit for a trigger) so a large floor fits.
+- **`MagicLinkIdentityProps.linkDomain`** (default: the sender's domain) is the
+  host the mailed link points at, and `MagicLinkAuthSite` now fails the synth
+  when it differs from the site's `domain`. Found live: with a sender on
+  `example.com` and a site on `app.example.com` every link pointed at a host that
+  does not serve `/login/callback`. Set `linkDomain` to the site domain in that
+  topology. A hand-rolled `IMagicLinkIdentity` may declare `linkDomain` to get
+  the same check.
 - **`/auth-signout` requires `POST` with `Content-Type: application/json`** (405 /
   415 otherwise), like `/auth-verify`. Send a POST with a JSON body (for example
   `{}`); a GET link or a form post no longer signs a user out. From a browser the
@@ -161,6 +170,34 @@ Fixes
   package must also check `exp`.
 - Log lines and metrics from Create and Verify carry closed enums only (no
   hashed address); their names stay under 20 characters.
+
+CloudFront and Lambda@Edge (verified live)
+
+- **Lambda@Edge runs `nodejs24.x`** (was `nodejs22.x`), for both the
+  single-tenant `check-auth` gate and the shared-distribution edge function.
+  CloudFront accepted the association and the gate redirected an
+  unauthenticated request and served a signed-in one. The edge bundles still
+  target node22.
+- **The config bake re-runs when the edge runtime changes.** Its inputs now
+  include the runtime; before, a runtime change alone left CloudFront on the
+  previously baked version.
+- **The construct's own `lambda:InvokeFunction` grants to CloudFront are
+  removed.** aws-cdk-lib's `FunctionUrlOrigin` grants (conditioned on
+  `InvokedViaFunctionUrl`, scoped to the distribution) are enough: POSTs to
+  `/auth-login`, `/auth-verify` and `/auth-signout` succeed through OAC with
+  them alone. Callers must still send `x-amz-content-sha256` on POST.
+
+Live verification (dev account, eu-central-1 + us-east-1, real CloudFront, SES
+and Cognito; torn down afterwards): admin-create-only pool, direct `SignUp`
+refused; `InitiateAuth` by address returns the same shape for allow-listed and
+unknown addresses (Cognito echoes a stable UUID for both); full request → mail →
+redeem → gated content flow; replay 401; a forwarded link refused in another
+browser and not consumed; typed code; POST-only sign-out; IAM recipient fence via
+the policy simulator; in headless Chromium, a link opened from another site and
+one opened directly both load without the cookie, send nothing until the click,
+and the click's POST carries the `SameSite=Strict` binding cookie; Create
+durations flat at the 1000 ms floor (warm); no address, token, code, session or
+JWT in any sign-in handler's logs.
 
 Deliberate deviations from the spec, NOT built here
 
