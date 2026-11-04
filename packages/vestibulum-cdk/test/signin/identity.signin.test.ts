@@ -19,6 +19,7 @@ import { describe, expect, it } from "vitest";
 
 import { RuntimeEnv as CdkRuntimeEnv } from "../../lib/_internal/runtime-env.js";
 import {
+  DEFAULT_CREATE_FLOOR_MS,
   DEFAULT_SIGNIN_FLOOR_MS,
   DEFAULT_TOKEN_TTL_MINUTES,
   MAX_TOKEN_TTL_MINUTES,
@@ -69,6 +70,7 @@ describe("shared constants agree with the runtime package", () => {
     expect(MAX_TOKEN_TTL_MINUTES).toBe(runtime.MAX_TOKEN_TTL_MINUTES);
     expect(DEFAULT_TOKEN_TTL_MINUTES).toBe(runtime.DEFAULT_TOKEN_TTL_MINUTES);
     expect(DEFAULT_SIGNIN_FLOOR_MS).toBe(runtime.DEFAULT_SIGNIN_FLOOR_MS);
+    expect(DEFAULT_CREATE_FLOOR_MS).toBe(runtime.DEFAULT_CREATE_FLOOR_MS);
   });
 
   it("every env-var name the handlers read is the one the constructs write (no third copy can drift)", () => {
@@ -120,6 +122,64 @@ describe("signin_link_expires_10min — one lifetime, three owners", () => {
     for (const t of tables) {
       expect(asObj(asObj(t.Properties)["TimeToLiveSpecification"])["Enabled"]).toBe(true);
     }
+  });
+});
+
+describe("createFloorMs — the CreateAuthChallenge response floor", () => {
+  const createEnv = (t: Template) => {
+    const fns = t.findResources("AWS::Lambda::Function");
+    const id = Object.keys(fns).find((k) => /CreateAuthFn/.test(k))!;
+    return (fns[id]!.Properties as { Environment: { Variables: Record<string, unknown> }; Timeout: number });
+  };
+
+  it("defaults to 1000 ms (live: at 400 ms the SES sending path exceeded the floor, max 870 ms) and agrees with the runtime default", () => {
+    expect(createEnv(build().template).Environment.Variables[CdkRuntimeEnv.CREATE_FLOOR_MS]).toBe("1000");
+    expect(runtime.DEFAULT_CREATE_FLOOR_MS).toBe(1000);
+  });
+
+  it("follows createFloorMs on the Create trigger only", () => {
+    const { template } = build({ createFloorMs: 1200 });
+    expect(createEnv(template).Environment.Variables[CdkRuntimeEnv.CREATE_FLOOR_MS]).toBe("1200");
+    const fns = template.findResources("AWS::Lambda::Function");
+    for (const [id, f] of Object.entries(fns)) {
+      if (/CreateAuthFn/.test(id)) continue;
+      const vars = (f.Properties as { Environment?: { Variables?: Record<string, unknown> } }).Environment?.Variables ?? {};
+      expect(vars).not.toHaveProperty(CdkRuntimeEnv.CREATE_FLOOR_MS);
+    }
+  });
+
+  it.each([100, 400, 5000])("accepts %i", (n) => {
+    expect(() => build({ createFloorMs: n })).not.toThrow();
+  });
+
+  it.each([0, 99, 5001, 400.5, Number.NaN, -1])("rejects createFloorMs=%s", (n) => {
+    expect(() => build({ createFloorMs: n })).toThrow(/createFloorMs/);
+  });
+
+  it("the Create function's timeout leaves room for the largest floor (5 s, Cognito's own limit)", () => {
+    expect(createEnv(build().template).Timeout).toBe(5);
+  });
+});
+
+describe("signin_attempts_bounded — the per-address daily cap", () => {
+  const envOf = (t: Template) =>
+    Object.values(t.findResources("AWS::Lambda::Function")).flatMap((f) => {
+      const v = (f.Properties as { Environment?: { Variables?: Record<string, unknown> } }).Environment?.Variables;
+      return v?.[CdkRuntimeEnv.TOKEN_SENDS_PER_DAY] === undefined ? [] : [v[CdkRuntimeEnv.TOKEN_SENDS_PER_DAY]];
+    });
+
+  it("defaults to 20 per UTC day on the trigger functions", () => {
+    const { template } = build();
+    expect(envOf(template).length).toBeGreaterThan(0);
+    expect(new Set(envOf(template))).toEqual(new Set(["20"]));
+  });
+
+  it("follows tokenSendsPerDay", () => {
+    expect(new Set(envOf(build({ tokenSendsPerDay: 5 }).template))).toEqual(new Set(["5"]));
+  });
+
+  it.each([0, -1, 1.5, Number.NaN])("rejects tokenSendsPerDay=%s", (n) => {
+    expect(() => build({ tokenSendsPerDay: n })).toThrow(MagicLinkIdentityPropsError);
   });
 });
 
@@ -189,7 +249,7 @@ describe("bounce wiring (01-evidence #15)", () => {
         const s = asObj(asObj(p.Properties)["PolicyDocument"])["Statement"] as unknown[];
         return s.map(asObj);
       })
-      .filter((s) => JSON.stringify(s["Action"]).includes("ses:SendEmail"));
+      .filter((s) => s["Effect"] === "Allow" && JSON.stringify(s["Action"]).includes("ses:SendEmail"));
     expect(sendStatements).toHaveLength(1);
     const resources = JSON.stringify(sendStatements[0]!["Resource"]);
     expect(resources).toContain(":identity/example.com");

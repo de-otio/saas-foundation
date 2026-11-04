@@ -13,6 +13,7 @@ import {
 } from "../../../../src/lambda/handlers/create-auth-challenge/magic-link-email.js";
 
 const TOKEN = "Tk".repeat(21) + "x"; // 43 chars, base64url-shaped
+const CODE = "04271983";
 
 describe("buildMagicLinkUrl", () => {
   it("puts the token in the fragment only", () => {
@@ -37,6 +38,7 @@ describe("sendMagicLinkEmail", () => {
       toAddress: "person@example.com",
       domain: "app.example.com",
       token: TOKEN,
+      code: CODE,
       ...extra,
     });
     return ses.commandCalls(SendEmailCommand)[0]!.args[0].input;
@@ -47,6 +49,32 @@ describe("sendMagicLinkEmail", () => {
     for (const body of [input.Message?.Body?.Text?.Data, input.Message?.Body?.Html?.Data]) {
       expect(body).toContain(`https://app.example.com/login/callback#token=${TOKEN}`);
       expect(body).not.toMatch(/[?&]token=/);
+    }
+  });
+
+  it("carries the typed code as a fallback in both parts, after the link", async () => {
+    const input = await send();
+    for (const body of [input.Message?.Body?.Text?.Data, input.Message?.Body?.Html?.Data]) {
+      expect(body).toContain(CODE);
+      expect(body!.indexOf(CODE)).toBeGreaterThan(body!.indexOf("#token="));
+      // The code is typed in the browser that asked; the copy says so.
+      expect(body).toMatch(/browser where you asked/i);
+    }
+  });
+
+  it("tells the recipient never to share the code, in the text and the HTML part", async () => {
+    const input = await send();
+    for (const body of [input.Message?.Body?.Text?.Data, input.Message?.Body?.Html?.Data]) {
+      expect(body).toMatch(/never share this code with anyone/i);
+      // ... and the warning sits with the code, after it and before the footer.
+      expect(body!.indexOf("Never share")).toBeGreaterThan(body!.indexOf(CODE));
+    }
+  });
+
+  it("puts the code nowhere in a URL", async () => {
+    const input = await send();
+    for (const body of [input.Message?.Body?.Text?.Data, input.Message?.Body?.Html?.Data]) {
+      expect(body).not.toMatch(new RegExp(`https?://\\S*${CODE}`));
     }
   });
 

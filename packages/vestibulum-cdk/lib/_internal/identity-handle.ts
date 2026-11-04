@@ -71,6 +71,24 @@ export interface IMagicLinkIdentity {
   readonly bindingTable: dynamodb.ITable;
   /** Link lifetime in minutes (3–15); the binding row and cookie follow it. */
   readonly tokenTtlMinutes: number;
+  /**
+   * Enrolment mode (`signin_no_self_signup`). `auth-login` follows it: it looks
+   * addresses up in the pool (admin-only) or signs them up (self-signup), and
+   * is granted only the Cognito actions that mode needs.
+   */
+  readonly enrollment: "admin-only" | "self-signup";
+  /**
+   * Host name the mailed link points at. Optional for hand-rolled handles;
+   * when present, `MagicLinkAuthSite` requires it to equal its `domain`.
+   */
+  readonly linkDomain?: string;
+  /**
+   * Pool-wide default refresh-token validity. `auth-signout` accepts an expired
+   * ID token up to this far in the past, so a user whose ID token lapsed can
+   * still revoke their refresh token. (A per-site `refreshTokenValidity`
+   * override takes precedence.)
+   */
+  readonly defaultRefreshTokenValidity: Duration;
   /** SNS topic receiving SES bounce/complaint notifications. */
   readonly bounceTopic: sns.ITopic;
   /** Optional consumer-supplied PreTokenGeneration Lambda. */

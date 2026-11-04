@@ -157,6 +157,22 @@ describe('verifyJwt', () => {
     ).rejects.toThrow();
   });
 
+  it.each([[61], [12 * 3600], [20 * 86400]])(
+    'rejects an authentic token that expired %i s ago (a long-lived cookie must not extend it)',
+    async (age) => {
+      const exp = FIXED_NOW_SEC - age;
+      const token = signTestJwt(primary, { claims: { exp, nbf: exp - 900, iat: exp - 900 } });
+      await expect(
+        verifyJwt(token, {
+          issuer: TEST_ISSUER,
+          jwks: [primary.jwk],
+          algorithms: ['RS256'],
+          clockSkewSec: 60,
+        }),
+      ).rejects.toThrow();
+    },
+  );
+
   it('rejects a not-yet-valid token (nbf in the future, beyond skew)', async () => {
     // nbf well beyond the clock-skew tolerance: a token minted for use
     // later must not be accepted now. aws-jwt-verify honours nbf with the

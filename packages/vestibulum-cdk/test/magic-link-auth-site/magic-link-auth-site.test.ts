@@ -334,16 +334,17 @@ describe("MagicLinkAuthSite", () => {
       });
     });
 
-    it("grants AuthLoginFn the Cognito SignUp + InitiateAuth policy on the user pool", () => {
+    it("grants AuthLoginFn the Cognito ListUsers + InitiateAuth policy on the user pool (default admin-only: no SignUp)", () => {
       template.hasResourceProperties("AWS::IAM::Policy", {
         PolicyDocument: Match.objectLike({
           Statement: Match.arrayWith([
             Match.objectLike({
-              Action: Match.arrayWith(["cognito-idp:SignUp", "cognito-idp:InitiateAuth"]),
+              Action: ["cognito-idp:ListUsers", "cognito-idp:InitiateAuth"],
             }),
           ]),
         }),
       });
+      expect(JSON.stringify(template.toJSON())).not.toContain("cognito-idp:SignUp");
     });
 
     it("sets the rate-limit table env var on AuthLoginFn", () => {
@@ -377,23 +378,21 @@ describe("MagicLinkAuthSite", () => {
       expect(hasReadWrite).toBe(true);
     });
 
-    it("adds the AuthLoginOacInvokeFunction permission for CloudFront, scoped to the distribution", () => {
-      const perms = template.findResources("AWS::Lambda::Permission");
-      const cfPerms = Object.values(perms)
-        .map((r) => r.Properties as { Action: string; Principal: string; SourceArn?: unknown });
-      const invoke = cfPerms.filter(
-        (p) => p.Principal === "cloudfront.amazonaws.com" && p.Action === "lambda:InvokeFunction",
-      );
-      expect(invoke.length).toBeGreaterThanOrEqual(3);
-      for (const p of invoke) {
-        expect(p.SourceArn, "InvokeFunction SourceArn").toBeTruthy();
+    it("CloudFront may invoke the three endpoints only through their Function URLs, from this distribution", () => {
+      // Verified live: OAC POSTs succeed with exactly these grants.
+      const cfInvoke = Object.values(template.findResources("AWS::Lambda::Permission"))
+        .map((r) => r.Properties as {
+          Action: string;
+          Principal: string;
+          SourceArn?: unknown;
+          InvokedViaFunctionUrl?: boolean;
+        })
+        .filter((p) => p.Principal === "cloudfront.amazonaws.com" && p.Action === "lambda:InvokeFunction");
+      expect(cfInvoke).toHaveLength(3);
+      for (const p of cfInvoke) {
+        expect(p.InvokedViaFunctionUrl, "no unconditioned InvokeFunction grant").toBe(true);
+        expect(p.SourceArn, "scoped to the distribution").toBeTruthy();
       }
-      // aws-cdk-lib's own grant is restricted to calls made through the Function URL.
-      const viaUrl = Object.values(perms).filter(
-        (r) =>
-          (r.Properties as { InvokedViaFunctionUrl?: boolean }).InvokedViaFunctionUrl === true,
-      );
-      expect(viaUrl.length).toBeGreaterThanOrEqual(3);
     });
   });
 
@@ -989,12 +988,13 @@ describe("MagicLinkAuthSite", () => {
       });
     });
 
-    it("injects a second BucketDeployment source (the deploy-time login-config.json)", () => {
+    it("deploys ONLY the login-page asset: no login-config.json (nothing reads it, and it published the client id, region and domain)", () => {
       const deployments = template.findResources("Custom::CDKBucketDeployment");
       const deployment = Object.values(deployments)[0] as {
         Properties: { SourceObjectKeys: unknown[] };
       };
-      expect(deployment.Properties.SourceObjectKeys.length).toBe(2);
+      expect(deployment.Properties.SourceObjectKeys.length).toBe(1);
+      expect(JSON.stringify(template.toJSON())).not.toContain("login-config");
     });
   });
 

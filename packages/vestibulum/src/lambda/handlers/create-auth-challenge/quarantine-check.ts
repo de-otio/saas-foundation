@@ -20,6 +20,18 @@ import {
 import { hmacEmail } from "../../shared/email-hmac.js";
 
 /**
+ * The denylist could not be consulted (`signin_fails_closed`). The caller must
+ * treat the request as unanswerable and mail nothing. The message is a closed
+ * string: it never carries an address, a table name or an SDK error body.
+ */
+export class DenylistUnavailableError extends Error {
+  constructor() {
+    super("denylist unavailable");
+    this.name = "DenylistUnavailableError";
+  }
+}
+
+/**
  * Returns true if the email is on the denylist.
  *
  * The denylist primary key is `HMAC-SHA-256(lowercased-email, sharedKey)` — we
@@ -30,9 +42,16 @@ import { hmacEmail } from "../../shared/email-hmac.js";
  * read silently never matches (the original bug: write used keyed HMAC, read
  * used a plain unkeyed sha256).
  *
- * A missing table is treated as "denylist disabled" — the construct creates
- * the table unconditionally, so this only happens in tests where the env var
- * is intentionally unset.
+ * **Fails closed.** A denylist that cannot be read is not an empty denylist:
+ *
+ * - an unset or empty table name (a deployment error) throws
+ *   {@link DenylistUnavailableError};
+ * - `ResourceNotFoundException` (the table is gone) throws
+ *   {@link DenylistUnavailableError};
+ * - any other error propagates as thrown.
+ *
+ * `CreateAuthChallenge` turns every one of these into "unanswerable, no mail"
+ * and a `SignInSuppressed` metric, so no exception reaches Cognito.
  */
 export async function isDenylisted(
   client: DynamoDBClient,
@@ -41,7 +60,7 @@ export async function isDenylisted(
   hmacKey: string,
 ): Promise<boolean> {
   if (tableName === undefined || tableName === "") {
-    return false;
+    throw new DenylistUnavailableError();
   }
 
   const emailHash = hmacEmail(email, hmacKey);
@@ -57,12 +76,8 @@ export async function isDenylisted(
     );
     return result.Item !== undefined;
   } catch (err) {
-    // A missing table is non-fatal — fail open for the denylist (treat as not
-    // denylisted) rather than block all signins. The rate limiter and SES
-    // bounce notifications still apply. This is the same posture as having
-    // no denylist configured at all.
     if (err instanceof ResourceNotFoundException) {
-      return false;
+      throw new DenylistUnavailableError();
     }
     throw err;
   }

@@ -11,6 +11,9 @@ import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as route53 from "aws-cdk-lib/aws-route53";
 import { beforeAll, describe, expect, it } from "vitest";
 
+// The runtime package's source of truth for the TTL attribute name (relative import: not exported).
+import * as runtime from "../../../vestibulum/src/lambda/shared/signin.js";
+
 import {
   CLIENT_CONFIG_SUBDOMAIN_INDEX,
   CLIENT_CONFIG_TENANT_ID_INDEX,
@@ -28,6 +31,7 @@ interface DdbTableResource {
   Properties?: {
     PointInTimeRecoverySpecification?: { PointInTimeRecoveryEnabled?: boolean };
     BillingMode?: string;
+    TimeToLiveSpecification?: { AttributeName?: string };
   };
   DeletionPolicy?: string;
   UpdateReplacePolicy?: string;
@@ -71,6 +75,28 @@ function defaultProps(stack: cdk.Stack): SharedDistributionIdentityProps {
     _skipEdgeBundle: true,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Enrolment of the shared pool's Create / Verify triggers
+// ---------------------------------------------------------------------------
+
+describe("SharedDistributionIdentity — Create/Verify triggers keep the shared pool's self-signup gate", () => {
+  it("tells both triggers `self-signup`: the pool's gate is the PreSignUp domain allow-list, not an admin-created user", () => {
+    // The triggers are the single-tenant bundles; their DEFAULT enrolment is
+    // `admin-only` (an allow-list this pool does not have, and no IAM for it),
+    // which would silently refuse every sign-in. The shared stack must say so.
+    const stack = makeStack("EnrolStack");
+    new SharedDistributionIdentity(stack, "Identity", defaultProps(stack));
+    const template = Template.fromStack(stack);
+    const fns = template.findResources("AWS::Lambda::Function");
+    for (const re of [/CreateAuthChallengeFn/, /VerifyAuthChallengeResponseFn/]) {
+      const [id] = Object.keys(fns).filter((k) => re.test(k));
+      const vars = (fns[id!]!.Properties as { Environment: { Variables: Record<string, string> } })
+        .Environment.Variables;
+      expect(vars["VESTIBULUM_ENROLLMENT"]).toBe("self-signup");
+    }
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Default-props happy path
@@ -191,13 +217,24 @@ describe("SharedDistributionIdentity — minimal default props", () => {
     });
   });
 
-  it("Reservations table has 'expiresAt' as the TTL attribute", () => {
+  it("Reservations table has 'expires_at' as the TTL attribute (the one name every table's TTL uses)", () => {
     template.hasResourceProperties("AWS::DynamoDB::Table", {
+      KeySchema: [{ AttributeName: "key", KeyType: "HASH" }],
       TimeToLiveSpecification: Match.objectLike({
-        AttributeName: "expiresAt",
+        AttributeName: "expires_at",
         Enabled: true,
       }),
     });
+  });
+
+  it("every table with a TTL names the attribute the handlers write and compare (expires_at)", () => {
+    // The handlers write TTL_ATTRIBUTE (runtime package) and compare it with the
+    // clock; DynamoDB TTL is cleanup only. ClientConfig has no TTL.
+    const names = Object.values(findDdbTables(template))
+      .map((t) => t.Properties?.TimeToLiveSpecification?.AttributeName)
+      .filter((n): n is string => n !== undefined);
+    expect(names.length).toBeGreaterThanOrEqual(2); // MagicLinkTokens + Reservations
+    expect(new Set(names)).toEqual(new Set([runtime.TTL_ATTRIBUTE]));
   });
 
   it("all DDB tables use PAY_PER_REQUEST billing", () => {

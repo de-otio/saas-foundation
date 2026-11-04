@@ -158,6 +158,11 @@ export class SharedDistributionTriggers extends Construct {
           ...commonEnv,
           [RuntimeEnv.SES_FROM]: props.sesIdentitySender,
           [RuntimeEnv.SES_REGION]: region,
+          // The shared pool's gate is the PreSignUp trigger's per-tenant domain
+          // allow-list (self-signup), not a Cognito user an admin created. The
+          // default `admin-only` mode would consult an allow-list this pool does
+          // not have (and no IAM for it), so keep the existing behaviour.
+          [RuntimeEnv.ENROLLMENT]: "self-signup",
         },
       },
     );
@@ -191,6 +196,8 @@ export class SharedDistributionTriggers extends Construct {
         ...commonLambdaProps,
         code: lambda.Code.fromAsset(resolveSharedBundlePath("verify-auth")),
         handler: "index.handler",
+        // Same enrolment as the Create trigger above.
+        environment: { ...commonEnv, [RuntimeEnv.ENROLLMENT]: "self-signup" },
       },
     );
 

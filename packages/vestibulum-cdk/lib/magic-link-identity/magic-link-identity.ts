@@ -38,7 +38,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
 
-import { Annotations, CustomResource, Duration, RemovalPolicy, Stack } from "aws-cdk-lib";
+import { Annotations, CustomResource, Duration, RemovalPolicy, Stack, Token } from "aws-cdk-lib";
 import * as cognito from "aws-cdk-lib/aws-cognito";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as iam from "aws-cdk-lib/aws-iam";
@@ -57,8 +57,11 @@ import { Construct } from "constructs";
 import { MagicLinkIdentityPropsError } from "./errors.js";
 import {
   type CustomAttributeDeclaration,
+  type Enrollment,
   type SignupMode,
   validateCustomAttributeDeclarations,
+  validateEnrollment,
+  validateRecipientPatterns,
   validateSesIdentitySender,
   validateSenderMatchesHostedZone,
   validateSignupModeForFederation,
@@ -72,7 +75,10 @@ import {
 import { buildAppClientOptions } from "../app-clients/index.js";
 import { RuntimeEnv } from "../_internal/runtime-env.js";
 import {
+  DEFAULT_CREATE_FLOOR_MS,
   DEFAULT_TOKEN_TTL_MINUTES,
+  MAX_CREATE_FLOOR_MS,
+  MIN_CREATE_FLOOR_MS,
   MAX_TOKEN_TTL_MINUTES,
   MIN_TOKEN_TTL_MINUTES,
   TTL_ATTRIBUTE,
@@ -232,7 +238,7 @@ export type HostedUiDomainProps =
   | { readonly kind: "custom"; readonly domainName: string; readonly acmCertArn: string };
 
 /** Re-exported declarative custom-attribute type. */
-export type { CustomAttributeDeclaration, SignupMode };
+export type { CustomAttributeDeclaration, Enrollment, SignupMode };
 
 /**
  * Cognito user-pool feature plan.
@@ -295,6 +301,16 @@ export interface MagicLinkIdentityProps {
   readonly sesIdentitySender: string;
 
   /**
+   * Host name the mailed link points at (`https://<linkDomain>/login/callback#…`).
+   * It must be the `domain` of the {@link MagicLinkAuthSite} that serves
+   * `/login/callback`; the site checks this at synth and fails on a mismatch.
+   * Set it when the site is not served on the sender's domain (for example a
+   * sender `signin@example.com` and a site at `app.example.com`).
+   * @default the domain of `sesIdentitySender`
+   */
+  readonly linkDomain?: string;
+
+  /**
    * Magic-link lifetime in minutes. Three owners enforce it and all follow this
    * one value: the Cognito app client's `AuthSessionValidity`, the binding row
    * and cookie, and the token row's `expires_at` (checked in Verify).
@@ -305,10 +321,105 @@ export interface MagicLinkIdentityProps {
   readonly tokenTtlMinutes?: number;
 
   /**
+   * How people get a Cognito user (`signin_no_self_signup`).
+   *
+   * - `'admin-only'` (default, per the spec): the pool allows only
+   *   administrator-created users (`AllowAdminCreateUserOnly`), no code path
+   *   calls `SignUp`, and a link is mailed only to an existing, enabled user
+   *   whose email is verified. **Create every user with `AdminCreateUser`,
+   *   `email` set to the lower-case address and `email_verified = true`;**
+   *   disable the Cognito user (`AdminDisableUser`) when eligibility ends.
+   * - `'self-signup'`: the legacy behaviour — anyone whose address passes the
+   *   PreSignUp domain allow-list is signed up on the fly. This is a
+   *   **documented deviation from invariant I9** (`signin_no_self_signup`).
+   *
+   * Switching an existing pool from `'self-signup'` to `'admin-only'` leaves
+   * its existing users in place; users who signed up themselves keep
+   * `email_verified` unset and must be marked verified before they can sign in.
+   *
+   * @default 'admin-only'
+   */
+  readonly enrollment?: Enrollment;
+
+  /**
+   * IAM recipient fence, allow side (`signin_mail_recipient_fenced_in_iam`).
+   * When set, the CreateAuthChallenge role may call `ses:SendEmail` only when
+   * every recipient matches one of these `ses:Recipients` patterns
+   * (`ForAllValues:StringLike`, with a `Null` guard so a call carrying no
+   * recipients cannot pass vacuously). IAM cannot read the allow-list; this is
+   * the backstop that limits a bug to the operator's own domains, e.g.
+   * `['*@example.com']`. `ses:Recipients` matching is case-sensitive and
+   * the handlers mail only lower-case addresses: write the patterns in lower
+   * case. Every entry must contain an `@` (a bare `*` would match everything).
+   *
+   * In `admin-only` mode leaving this unset emits a synth warning: without it
+   * IAM does not limit which domains the Create trigger may mail.
+   *
+   * **Conditions deliberately NOT emitted** (spec 03 §4 sketches them):
+   * `ses:FromDisplayName` — the sender sets no display name, and the spec itself
+   * records that a `Null` check on it may fail closed if SES fills the key
+   * (unverified); `ses:FeedbackAddress` — whether and how SES fills it for a v1
+   * `SendEmail` is unverified, and a wrong pin would deny every send (the spec
+   * saw exactly that); `ses:TenantName` — the v1 API this handler uses has no
+   * tenants. Pin them only after a live send confirms the behaviour.
+   * @default - no recipient fence on the Allow
+   */
+  readonly allowedRecipientPatterns?: string[];
+
+  /**
+   * IAM recipient fence, deny side (`e2e_marker_never_mailed_in_prod`). When
+   * set, a separate explicit Deny on `ses:SendEmail` / `ses:SendRawEmail`
+   * covers any recipient matching one of these patterns
+   * (`ForAnyValue:StringLike`), for example `['*+e2e-*', '*@maildummy.*']` in
+   * production. A Deny cannot be outlived by any later Allow. Entries must be
+   * non-empty; unlike the allow side they need no `@` (`*+e2e-*` is a local-part
+   * marker).
+   * @default - no Deny statement
+   */
+  readonly deniedRecipientPatterns?: string[];
+
+  /**
+   * Opt out of the default test-marker Deny. In `admin-only` mode the Create
+   * role is ALWAYS denied `ses:SendEmail` / `ses:SendRawEmail` to recipients
+   * matching `*+e2e-*@*` and `*@maildummy.*` (`e2e_marker_never_mailed_in_prod`),
+   * so a test address can never receive a real sign-in mail. A dev or test stage
+   * that mails such addresses on purpose (end-to-end tests with a mail-capture
+   * domain) sets this to `true`. `deniedRecipientPatterns` is additive either
+   * way. Has no effect in `self-signup` mode, which has no default Deny.
+   * @default false
+   */
+  readonly allowTestRecipients?: boolean;
+
+  /**
+   * Minimum duration of a CreateAuthChallenge invocation, in milliseconds,
+   * whatever the caller class (`signin_request_indistinguishable`): it keeps
+   * Cognito's own latency flat for callers that hit `InitiateAuth` directly.
+   * It must exceed the p99 of the slowest path (an SES send). Integer from 100
+   * to 5000; Cognito gives a trigger at most 5 seconds in total, so keep floor
+   * plus work well below that.
+   *
+   * The default was measured live: at 400 ms the SES sending path exceeded the
+   * floor (p90 439 ms, max 870 ms) while the silent path did not. Re-measure
+   * per stage (cold starts, SES latency).
+   * @default 1000
+   */
+  readonly createFloorMs?: number;
+
+  /**
    * Maximum magic-link sends per email address per 15-minute window.
    * @default 3
    */
   readonly tokenSendsPerWindow?: number;
+
+  /**
+   * Maximum challenges (mails) per email address per UTC day
+   * (`signin_attempts_bounded`). With one answer per session this bounds
+   * guessing of the typed 8-digit code: at the default 20 a year of attempts
+   * against one address succeeds with probability about 7·10⁻⁵. Must be a
+   * positive integer; raising it weakens that bound.
+   * @default 20
+   */
+  readonly tokenSendsPerDay?: number;
 
   /**
    * Maximum sign-up attempts per email + source IP per 15-minute window.
@@ -444,6 +555,13 @@ export interface MagicLinkIdentityProps {
 // Construct metadata markers
 // ---------------------------------------------------------------------------
 
+/**
+ * Recipients that are never mailed from an `admin-only` identity unless the
+ * stage opts out (`allowTestRecipients`): a `+e2e-` local-part marker and a
+ * mail-capture (maildummy) domain.
+ */
+export const DEFAULT_TEST_RECIPIENT_DENY_PATTERNS: readonly string[] = ["*+e2e-*@*", "*@maildummy.*"];
+
 const VESTIBULUM_SUBTREE_MARKER_TYPE = "vestibulum:subtree-root";
 const VESTIBULUM_IDENTITY_METADATA_TYPE = "vestibulum:identity-config";
 
@@ -498,6 +616,12 @@ export class MagicLinkIdentity extends Construct {
 
   /** Link lifetime in minutes, applied to every app client and table row. */
   readonly tokenTtlMinutes: number;
+
+  /** Resolved enrolment mode (always defined — defaults to `'admin-only'`). */
+  readonly enrollment: Enrollment;
+
+  /** Host name the mailed link points at (resolved `linkDomain`). */
+  readonly linkDomain: string;
 
   /** SES configuration set whose event destination feeds {@link bounceTopic}. */
   readonly sesConfigurationSet: ses.ConfigurationSet;
@@ -587,6 +711,24 @@ export class MagicLinkIdentity extends Construct {
       signupMode: props.signupMode,
     });
     this.signupMode = props.signupMode ?? "open";
+    this.enrollment = validateEnrollment(props.enrollment ?? "admin-only");
+    this.linkDomain = props.linkDomain ?? senderDomain;
+    if (
+      !Token.isUnresolved(this.linkDomain) &&
+      !/^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(this.linkDomain)
+    ) {
+      throw new Error(
+        `MagicLinkIdentity: linkDomain must be a lower-case host name (no scheme, path or port); got "${this.linkDomain}"`,
+      );
+    }
+    const allowedRecipientPatterns =
+      props.allowedRecipientPatterns === undefined
+        ? undefined
+        : validateRecipientPatterns("allowedRecipientPatterns", props.allowedRecipientPatterns);
+    const deniedRecipientPatterns =
+      props.deniedRecipientPatterns === undefined
+        ? undefined
+        : validateRecipientPatterns("deniedRecipientPatterns", props.deniedRecipientPatterns);
 
     this.advancedSecurity = props.advancedSecurity ?? "off";
     this.immutableAttributeSeverity = props.immutableAttributeSeverity ?? "error";
@@ -650,6 +792,24 @@ export class MagicLinkIdentity extends Construct {
     }
     this.tokenTtlMinutes = tokenTtlMinutes;
     const tokenSendsPerWindow = props.tokenSendsPerWindow ?? 3;
+    const createFloorMs = props.createFloorMs ?? DEFAULT_CREATE_FLOOR_MS;
+    if (
+      !Number.isInteger(createFloorMs) ||
+      createFloorMs < MIN_CREATE_FLOOR_MS ||
+      createFloorMs > MAX_CREATE_FLOOR_MS
+    ) {
+      throw new MagicLinkIdentityPropsError(
+        `[vestibulum-cdk:MagicLinkIdentity] createFloorMs must be an integer from ` +
+          `${MIN_CREATE_FLOOR_MS} to ${MAX_CREATE_FLOOR_MS}; got ${String(props.createFloorMs)}.`,
+      );
+    }
+    const tokenSendsPerDay = props.tokenSendsPerDay ?? 20;
+    if (!Number.isInteger(tokenSendsPerDay) || tokenSendsPerDay < 1) {
+      throw new MagicLinkIdentityPropsError(
+        `[vestibulum-cdk:MagicLinkIdentity] tokenSendsPerDay must be a positive ` +
+          `integer; got ${String(props.tokenSendsPerDay)}.`,
+      );
+    }
     const signUpsPerWindow = props.signUpsPerWindow ?? 3;
     this.defaultIdTokenValidity = props.defaultIdTokenValidity ?? Duration.minutes(15);
     this.defaultRefreshTokenValidity = props.defaultRefreshTokenValidity ?? Duration.hours(24);
@@ -762,12 +922,12 @@ export class MagicLinkIdentity extends Construct {
       // CreateAuthChallenge handler. Without it that handler throws and Cognito
       // returns the generic "Authentication failed". This MUST equal the
       // `domain` passed to MagicLinkAuthSite (which serves `/login/callback`).
-      // Defaulted to the SES sender apex, which equals the site domain in the
-      // apex-aligned topology; a consumer serving the site on a domain other
-      // than the sender apex must align the two.
-      [RuntimeEnv.DOMAIN]: senderDomain,
+      // `linkDomain` defaults to the SES sender's domain; MagicLinkAuthSite
+      // fails the synth when it differs from the site's own `domain`.
+      [RuntimeEnv.DOMAIN]: this.linkDomain,
       [RuntimeEnv.TOKEN_TTL_MINUTES]: String(tokenTtlMinutes),
       [RuntimeEnv.TOKEN_SENDS_PER_WINDOW]: String(tokenSendsPerWindow),
+      [RuntimeEnv.TOKEN_SENDS_PER_DAY]: String(tokenSendsPerDay),
       [RuntimeEnv.SIGN_UPS_PER_WINDOW]: String(signUpsPerWindow),
       [RuntimeEnv.ALLOWED_EMAIL_DOMAINS]: JSON.stringify(props.allowedEmailDomains),
       [RuntimeEnv.BOUNCE_HMAC_SECRET]: hmacSecret.secretArn,
@@ -802,16 +962,29 @@ export class MagicLinkIdentity extends Construct {
       handler: "index.handler",
     });
 
+    // The enrolment mode is a plain string, so it is safe to put on the trigger
+    // functions. The pool id is NOT: a trigger's environment must not reference
+    // the pool (the pool already references the trigger's ARN — a dependency
+    // cycle). Create and Verify read the pool from the trigger event instead
+    // (`event.userPoolId`), which Cognito always supplies.
+    const triggerEnv = { ...commonEnv, [RuntimeEnv.ENROLLMENT]: this.enrollment };
+    // Only CreateAuthChallenge holds a response floor.
+    const createEnv = { ...triggerEnv, [RuntimeEnv.CREATE_FLOOR_MS]: String(createFloorMs) };
+
     this.createAuthFn = new lambda.Function(this, "CreateAuthFn", {
       ...commonLambdaProps,
       code: lambda.Code.fromAsset(resolveBundlePath("create-auth")),
       handler: "index.handler",
+      environment: createEnv,
+      // The response floor (up to 5 s) must fit: 5 s is also Cognito's limit for a trigger.
+      timeout: Duration.seconds(5),
     });
 
     this.verifyAuthFn = new lambda.Function(this, "VerifyAuthFn", {
       ...commonLambdaProps,
       code: lambda.Code.fromAsset(resolveBundlePath("verify-auth")),
       handler: "index.handler",
+      environment: triggerEnv,
     });
 
     this.bounceHandlerFn = new lambda.Function(this, "BounceHandlerFn", {
@@ -838,18 +1011,72 @@ export class MagicLinkIdentity extends Construct {
     // CreateAuthChallenge sends the magic-link email via SES SendEmail from the
     // verified sender identity. Without this grant the handler throws and
     // Cognito returns "CreateAuthChallenge failed: ... not authorized to
-    // perform ses:SendEmail ...". Scoped to this construct's sender identity.
+    // perform ses:SendEmail ...".
+    //
+    // The IAM recipient fence (`signin_mail_recipient_fenced_in_iam`, spec 03
+    // §4): the Allow is `ses:SendEmail` ONLY (the handler sends with the v1
+    // SendEmail API; raw MIME can carry recipients in headers), on the identity
+    // and the configuration set, with exactly the configured From address, and —
+    // when `allowedRecipientPatterns` is given — to matching recipients only.
+    const allowConditions: Record<string, Record<string, string | string[]>> = {
+      StringEquals: { "ses:FromAddress": props.sesIdentitySender },
+    };
+    if (allowedRecipientPatterns !== undefined) {
+      // `ForAllValues` is vacuously true for an absent key, so a call that
+      // carries no recipients at all must be refused explicitly.
+      allowConditions["ForAllValues:StringLike"] = {
+        "ses:Recipients": [...allowedRecipientPatterns],
+      };
+      allowConditions["Null"] = { "ses:Recipients": "false" };
+    }
     this.createAuthFn.addToRolePolicy(
       new iam.PolicyStatement({
-        actions: ["ses:SendEmail", "ses:SendRawEmail"],
+        sid: "SendSignInMailOnlyAsThisSenderToAllowedAddresses",
+        actions: ["ses:SendEmail"],
         resources: [
           `arn:aws:ses:${Stack.of(this).region}:${Stack.of(this).account}:identity/${senderDomain}`,
           // SES authorises a send that names a configuration set against the
           // set as well as the identity; omitting it is AccessDenied at runtime.
           `arn:aws:ses:${Stack.of(this).region}:${Stack.of(this).account}:configuration-set/${this.sesConfigurationSet.configurationSetName}`,
         ],
+        conditions: allowConditions,
       }),
     );
+    // The Deny for test-marker recipients (`e2e_marker_never_mailed_in_prod`). In
+    // admin-only mode it is ALWAYS present with the default markers, so a
+    // maildummy / `+e2e-` address can never be mailed unless a stage opts out
+    // with `allowTestRecipients`; `deniedRecipientPatterns` adds to it. A Deny
+    // cannot be outlived by any later Allow.
+    const denyPatterns = [
+      ...new Set([
+        ...(this.enrollment === "admin-only" && props.allowTestRecipients !== true
+          ? DEFAULT_TEST_RECIPIENT_DENY_PATTERNS
+          : []),
+        ...(deniedRecipientPatterns ?? []),
+      ]),
+    ];
+    if (denyPatterns.length > 0) {
+      this.createAuthFn.addToRolePolicy(
+        new iam.PolicyStatement({
+          sid: "NeverMailADeniedRecipient",
+          effect: iam.Effect.DENY,
+          actions: ["ses:SendEmail", "ses:SendRawEmail"],
+          resources: ["*"],
+          conditions: {
+            "ForAnyValue:StringLike": { "ses:Recipients": denyPatterns },
+          },
+        }),
+      );
+    }
+    if (this.enrollment === "admin-only" && allowedRecipientPatterns === undefined) {
+      Annotations.of(this).addWarningV2(
+        "@de-otio/vestibulum-cdk:no-recipient-allow-fence",
+        "MagicLinkIdentity: enrollment is 'admin-only' but allowedRecipientPatterns is not set, " +
+          "so IAM does not limit which domains the Create trigger may mail. Set " +
+          "allowedRecipientPatterns (for example ['*@example.com']) as the backstop for an " +
+          "allow-list bug.",
+      );
+    }
 
     // VerifyAuthChallenge reads the token row (GetItem) to validate the
     // submitted token, then consumes it (DeleteItem) — needs read AND write.
@@ -1076,7 +1303,9 @@ export class MagicLinkIdentity extends Construct {
 
     this.cognitoPool = new cognito.UserPool(this, "Pool", {
       signInAliases: { email: true },
-      selfSignUpEnabled: true,
+      // `signin_no_self_signup`: admin-only (the default) renders as
+      // AdminCreateUserConfig.AllowAdminCreateUserOnly = true.
+      selfSignUpEnabled: this.enrollment === "self-signup",
       standardAttributes,
       customAttributes: combinedCustomAttributes,
       mfa: cognito.Mfa.OFF,
@@ -1126,6 +1355,36 @@ export class MagicLinkIdentity extends Construct {
     );
 
     this.bounceTopic.addSubscription(new snsSubscriptions.LambdaSubscription(this.bounceHandlerFn));
+
+    // -----------------------------------------------------------------------
+    // Allow-list reads for the Create and Verify triggers (admin-only mode)
+    //
+    // `cognito-idp:AdminGetUser` on THIS pool: Create asks "is this subject
+    // eligible?" at issue, Verify asks again at redemption
+    // (`signin_redeem_rechecks_eligibility`). The pool lists the trigger
+    // functions in its LambdaConfig, so a grant that mentions the pool ARN must
+    // NOT be added to the function's own role policy: CDK makes a Lambda
+    // function depend on that policy, which would close the cycle
+    // pool -> function -> policy -> pool. A standalone `iam.Policy` attached to
+    // the role is outside that dependency (test: signin/identity.enrollment).
+    // -----------------------------------------------------------------------
+    if (this.enrollment === "admin-only") {
+      for (const [policyId, fn] of [
+        ["CreateAuthAllowListPolicy", this.createAuthFn],
+        ["VerifyAuthAllowListPolicy", this.verifyAuthFn],
+      ] as const) {
+        new iam.Policy(this, policyId, {
+          roles: [fn.role as iam.IRole],
+          statements: [
+            new iam.PolicyStatement({
+              sid: "ReadSignInAllowList",
+              actions: ["cognito-idp:AdminGetUser"],
+              resources: [this.cognitoPool.userPoolArn],
+            }),
+          ],
+        });
+      }
+    }
 
     // -----------------------------------------------------------------------
     // Cognito Advanced Security (B-H — opt-in)

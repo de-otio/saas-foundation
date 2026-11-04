@@ -15,6 +15,7 @@ import {
   DynamoDBClient,
   GetItemCommand,
   PutItemCommand,
+  ResourceNotFoundException,
   UpdateItemCommand,
 } from '@aws-sdk/client-dynamodb';
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
@@ -66,6 +67,8 @@ describe('shared-distribution create-auth-challenge handler', () => {
     process.env['VESTIBULUM_TOKEN_TABLE'] = 'MagicLinkTokens';
     process.env['VESTIBULUM_RATE_LIMIT_TABLE'] = 'RateLimit';
     process.env['VESTIBULUM_SES_FROM'] = 'noreply@example.com';
+    // The denylist must be configured: an unset table fails closed (I15).
+    process.env['VESTIBULUM_DENYLIST_TABLE'] = 'Denylist';
   });
 
   afterEach(() => {
@@ -73,12 +76,13 @@ describe('shared-distribution create-auth-challenge handler', () => {
     delete process.env['VESTIBULUM_TOKEN_TABLE'];
     delete process.env['VESTIBULUM_RATE_LIMIT_TABLE'];
     delete process.env['VESTIBULUM_SES_FROM'];
+    delete process.env['VESTIBULUM_DENYLIST_TABLE'];
   });
 
   it('builds magic-link URL using per-client siteBaseUrl', async () => {
     const clientId = nextClientId();
     const siteBaseUrl = 'https://acme.tenants.example.com';
-    ddbMock.on(GetItemCommand).resolves({ Item: clientConfigItem(clientId, siteBaseUrl) });
+    ddbMock.on(GetItemCommand).resolvesOnce({ Item: clientConfigItem(clientId, siteBaseUrl) }).resolves({}); // 1st read: ClientConfig; then: denylist (clear)
     ddbMock.on(UpdateItemCommand).resolves({});
     ddbMock.on(PutItemCommand).resolves({});
     sesMock.on(SendEmailCommand).resolves({ MessageId: 'msg-1' });
@@ -110,7 +114,7 @@ describe('shared-distribution create-auth-challenge handler', () => {
   it('uses correct siteBaseUrl for a second tenant (beta)', async () => {
     const clientId = nextClientId();
     const siteBaseUrl = 'https://beta.tenants.example.com';
-    ddbMock.on(GetItemCommand).resolves({ Item: clientConfigItem(clientId, siteBaseUrl) });
+    ddbMock.on(GetItemCommand).resolvesOnce({ Item: clientConfigItem(clientId, siteBaseUrl) }).resolves({}); // 1st read: ClientConfig; then: denylist (clear)
     ddbMock.on(UpdateItemCommand).resolves({});
     ddbMock.on(PutItemCommand).resolves({});
     sesMock.on(SendEmailCommand).resolves({ MessageId: 'msg-2' });
@@ -178,9 +182,45 @@ describe('shared-distribution create-auth-challenge handler', () => {
     }
   });
 
+  // signin_fails_closed (I15): a denylist that cannot be read is not an empty one.
+  it('returns a fail-closed challenge and sends nothing when the denylist table is not configured', async () => {
+    const clientId = nextClientId();
+    delete process.env['VESTIBULUM_DENYLIST_TABLE'];
+    ddbMock.on(GetItemCommand).resolvesOnce({ Item: clientConfigItem(clientId, 'https://acme.tenants.example.com') }).resolves({});
+    ddbMock.on(UpdateItemCommand).resolves({});
+    ddbMock.on(PutItemCommand).resolves({});
+    sesMock.on(SendEmailCommand).resolves({ MessageId: 'x' });
+
+    const h = createSharedCreateAuthChallengeHandler({
+      dynamodb: new DynamoDBClient({}),
+      ses: new SESClient({}),
+    });
+    const result = await h(makeEvent('user@acme.com', clientId));
+    expect(result.response.privateChallengeParameters?.['quarantined']).toBe('true');
+    expect(sesMock.calls()).toHaveLength(0);
+    expect(ddbMock.commandCalls(PutItemCommand)).toHaveLength(0);
+  });
+
+  it('returns a fail-closed challenge and sends nothing when the denylist table does not exist', async () => {
+    const clientId = nextClientId();
+    ddbMock
+      .on(GetItemCommand)
+      .resolvesOnce({ Item: clientConfigItem(clientId, 'https://acme.tenants.example.com') })
+      .rejects(new ResourceNotFoundException({ message: 'gone', $metadata: {} }));
+    ddbMock.on(UpdateItemCommand).resolves({});
+
+    const h = createSharedCreateAuthChallengeHandler({
+      dynamodb: new DynamoDBClient({}),
+      ses: new SESClient({}),
+    });
+    const result = await h(makeEvent('user@acme.com', clientId));
+    expect(result.response.privateChallengeParameters?.['quarantined']).toBe('true');
+    expect(sesMock.calls()).toHaveLength(0);
+  });
+
   it('sets non-denied token_hash in private challenge parameters on success', async () => {
     const clientId = nextClientId();
-    ddbMock.on(GetItemCommand).resolves({ Item: clientConfigItem(clientId, 'https://acme.tenants.example.com') });
+    ddbMock.on(GetItemCommand).resolvesOnce({ Item: clientConfigItem(clientId, 'https://acme.tenants.example.com') }).resolves({}); // 1st read: ClientConfig; then: denylist (clear)
     ddbMock.on(UpdateItemCommand).resolves({});
     ddbMock.on(PutItemCommand).resolves({});
     sesMock.on(SendEmailCommand).resolves({ MessageId: 'msg-3' });
@@ -203,7 +243,7 @@ describe('shared-distribution create-auth-challenge handler', () => {
 
   it('sets email in public and private challenge parameters', async () => {
     const clientId = nextClientId();
-    ddbMock.on(GetItemCommand).resolves({ Item: clientConfigItem(clientId, 'https://acme.tenants.example.com') });
+    ddbMock.on(GetItemCommand).resolvesOnce({ Item: clientConfigItem(clientId, 'https://acme.tenants.example.com') }).resolves({}); // 1st read: ClientConfig; then: denylist (clear)
     ddbMock.on(UpdateItemCommand).resolves({});
     ddbMock.on(PutItemCommand).resolves({});
     sesMock.on(SendEmailCommand).resolves({ MessageId: 'msg-4' });

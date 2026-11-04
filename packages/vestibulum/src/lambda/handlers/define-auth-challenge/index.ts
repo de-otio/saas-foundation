@@ -6,10 +6,11 @@
  * challenge rounds:
  *
  *  1. First invocation (empty session): issue a CUSTOM_CHALLENGE.
- *  2. Second invocation (one session entry): check the challenge result.
- *     - `true`  → issue tokens (challenge succeeded).
- *     - `false` → fail auth (no retry on the same session — prevents
- *                 brute-force token guessing).
+ *  2. Second invocation (`session = [CUSTOM_CHALLENGE ✓]` exactly): issue tokens.
+ *  3. Every other shape fails authentication (`signin_attempts_bounded`): a
+ *     failed round (no retry on the same session — prevents brute-force
+ *     guessing of the 8-digit code), any round that is not `CUSTOM_CHALLENGE`,
+ *     and any session longer than one.
  *
  * No PII is written to logs. Challenge results and session indexes are
  * logged at most as boolean/numeric values.
@@ -57,9 +58,12 @@ export function createDefineAuthChallengeHandler() {
   return async function handler(
     event: DefineAuthChallengeEvent,
   ): Promise<DefineAuthChallengeEvent> {
-    const session = event.request.session;
+    const session: unknown = event.request.session;
 
-    if (session.length === 0) {
+    // `signin_attempts_bounded`: exactly ONE answer per session. Every extra
+    // round would re-invoke Create (minting and mailing again), so only two
+    // shapes are ever acted on and everything else fails.
+    if (Array.isArray(session) && session.length === 0) {
       // No challenge has been issued yet — start the custom auth flow.
       event.response.challengeName = "CUSTOM_CHALLENGE";
       event.response.issueTokens = false;
@@ -67,19 +71,22 @@ export function createDefineAuthChallengeHandler() {
       return event;
     }
 
-    // There is exactly one session entry (the single allowed challenge round).
-    // Retrieve the last result.
-    const lastResult = session[session.length - 1];
+    const only: unknown = Array.isArray(session) && session.length === 1 ? session[0] : undefined;
+    const answeredOnceCorrectly =
+      typeof only === "object" &&
+      only !== null &&
+      (only as Partial<ChallengeResult>).challengeName === "CUSTOM_CHALLENGE" &&
+      (only as Partial<ChallengeResult>).challengeResult === true;
 
-    if (lastResult !== undefined && lastResult.challengeResult === true) {
-      // Challenge answered correctly — issue tokens.
+    if (answeredOnceCorrectly) {
+      // The single allowed custom round was answered correctly — issue tokens.
       event.response.issueTokens = true;
       event.response.failAuthentication = false;
       return event;
     }
 
-    // Challenge failed (or session is in an unexpected state).
-    // No retry: immediately fail authentication.
+    // A failed round, a non-CUSTOM_CHALLENGE round (e.g. SRP/password), a longer
+    // session, or anything malformed: no retry, no tokens.
     event.response.issueTokens = false;
     event.response.failAuthentication = true;
     return event;

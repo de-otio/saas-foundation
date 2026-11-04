@@ -7,12 +7,14 @@
  *   (U21)                                      least privilege: auth-verify no longer holds the token table or denylist
  *   signin_link_bound_to_requesting_browser    the binding cookie actually reaches auth-verify (origin request policy)
  *   (U14)                                      runtimes
+ *   signin_no_self_signup (I9, U6)             auth-login is granted ListUsers (admin-only) or SignUp (self-signup), never both
+ *   disable_ends_sessions                      auth-signout is told the refresh-token window for an expired ID token
  */
 
 import * as fs from "node:fs";
 
 import * as cdk from "aws-cdk-lib";
-import { Match, Template } from "aws-cdk-lib/assertions";
+import { Template } from "aws-cdk-lib/assertions";
 import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -25,6 +27,8 @@ import {
   actionsForFunction,
   functionIdByDescription,
   sdkActionsUsedBy,
+  sdkActionsUsedByFile,
+  sharedModule,
   statementsForFunction,
 } from "./helpers.js";
 
@@ -35,7 +39,13 @@ const tmpRoots: string[] = [];
 let template: Template;
 
 /** Builds a site stack (the real construct, mock identity) and returns its template. */
-function buildSite(extra: { signInFloorMs?: number } = {}): Template {
+function buildSite(
+  extra: {
+    signInFloorMs?: number;
+    enrollment?: "admin-only" | "self-signup";
+    refreshTokenValidity?: cdk.Duration;
+  } = {},
+): Template {
   const root = makeMockPackageRoot();
   tmpRoots.push(root);
   const app = new cdk.App();
@@ -43,7 +53,11 @@ function buildSite(extra: { signInFloorMs?: number } = {}): Template {
     env: { account: "123456789012", region: "us-east-1" },
     crossRegionReferences: true,
   });
-  const identity = new MockIdentity(stack, "Identity");
+  const identity = new MockIdentity(
+    stack,
+    "Identity",
+    extra.enrollment !== undefined ? { enrollment: extra.enrollment } : {},
+  );
   const zone = cdk.aws_route53.HostedZone.fromHostedZoneAttributes(stack, "Zone", {
     hostedZoneId: "Z123456789EXAMPLE",
     zoneName: "example.com",
@@ -58,6 +72,9 @@ function buildSite(extra: { signInFloorMs?: number } = {}): Template {
     _packageRoot: root,
     _bundleManifest: MOCK_BUNDLE_MANIFEST,
     ...(extra.signInFloorMs !== undefined && { signInFloorMs: extra.signInFloorMs }),
+    ...(extra.refreshTokenValidity !== undefined && {
+      refreshTokenValidity: extra.refreshTokenValidity,
+    }),
   });
   return Template.fromStack(stack);
 }
@@ -73,7 +90,6 @@ afterAll(() => {
 const FUNCTIONS = [
   { name: "auth-verify", dir: "auth-verify" },
   { name: "auth-signout", dir: "auth-signout" },
-  { name: "auth-login", dir: "auth-login" },
 ] as const;
 
 describe("IAM ↔ SDK command agreement (01-evidence #6, #14)", () => {
@@ -105,6 +121,100 @@ describe("IAM ↔ SDK command agreement (01-evidence #6, #14)", () => {
     const s = stmts.find((x) => JSON.stringify(x.Action).includes("AdminUserGlobalSignOut"))!;
     expect(JSON.stringify(s.Resource)).not.toBe('"*"');
     expect(JSON.stringify(s.Resource)).toContain("Arn");
+  });
+});
+
+describe("auth-login: IAM ↔ SDK agreement per enrolment mode (signin_no_self_signup)", () => {
+  /** `self-signup.ts` is the only code that sends SignUp; it runs only in that mode. */
+  const adminOnlyCode = () => sdkActionsUsedBy("auth-login", { exclude: ["self-signup.ts"] });
+  const cognito = (granted: Set<string>) => [...granted].filter((a) => a.startsWith("cognito-idp:"));
+
+  it("the allow-list adapter sends exactly ListUsers (auth-login's lookup) and AdminGetUser (Create/Verify's get)", () => {
+    const used = sdkActionsUsedByFile(sharedModule("allow-list.ts"));
+    expect([...used].sort()).toEqual(["cognito-idp:AdminGetUser", "cognito-idp:ListUsers"]);
+  });
+
+  it("admin-only (default): granted every action its code sends, ListUsers for the lookup, and NOT SignUp", () => {
+    const granted = actionsForFunction(template, functionIdByDescription(template, "auth-login endpoint"));
+    const used = adminOnlyCode();
+    expect(used.size).toBeGreaterThan(0);
+    expect([...used].filter((a) => !granted.has(a))).toEqual([]);
+    expect(granted.has("cognito-idp:ListUsers")).toBe(true);
+    expect(granted.has("cognito-idp:SignUp")).toBe(false);
+    // No dead or wrong-named Cognito grants: exactly what the admin-only path sends.
+    expect(cognito(granted).sort()).toEqual([...cognito(used), "cognito-idp:ListUsers"].sort());
+    // auth-login looks addresses up; it never reads a single user by subject.
+    expect(granted.has("cognito-idp:AdminGetUser")).toBe(false);
+  });
+
+  it("self-signup (opt-in): granted SignUp + InitiateAuth and NOT ListUsers; every action its code sends is granted", () => {
+    const t = buildSite({ enrollment: "self-signup" });
+    const granted = actionsForFunction(t, functionIdByDescription(t, "auth-login endpoint"));
+    const used = sdkActionsUsedBy("auth-login");
+    expect([...used].filter((a) => !granted.has(a))).toEqual([]);
+    expect(granted.has("cognito-idp:SignUp")).toBe(true);
+    expect(granted.has("cognito-idp:ListUsers")).toBe(false);
+    expect(cognito(granted).sort()).toEqual(["cognito-idp:InitiateAuth", "cognito-idp:SignUp"]);
+  });
+
+  it("the Cognito grant is scoped to the user pool in both modes, never *", () => {
+    for (const enrollment of ["admin-only", "self-signup"] as const) {
+      const t = buildSite({ enrollment });
+      const stmt = statementsForFunction(t, functionIdByDescription(t, "auth-login endpoint")).find((x) =>
+        JSON.stringify(x.Action).includes("InitiateAuth"),
+      )!;
+      expect(JSON.stringify(stmt.Resource)).not.toBe('"*"');
+      expect(JSON.stringify(stmt.Resource)).toContain("Arn");
+    }
+  });
+
+  it.each(["admin-only", "self-signup"] as const)("%s: auth-login is told the mode and the pool", (enrollment) => {
+    const t = buildSite({ enrollment });
+    const env = (t.findResources("AWS::Lambda::Function")[functionIdByDescription(t, "auth-login endpoint")]!
+      .Properties as { Environment: { Variables: Record<string, unknown> } }).Environment.Variables;
+    expect(env["VESTIBULUM_ENROLLMENT"]).toBe(enrollment);
+    expect(JSON.stringify(env["VESTIBULUM_USER_POOL_ID"])).toContain("Ref");
+  });
+
+  it("the other regional functions are not given the enrolment mode", () => {
+    for (const needle of ["auth-verify endpoint", "auth-signout endpoint"]) {
+      const env = (template.findResources("AWS::Lambda::Function")[functionIdByDescription(template, needle)]!
+        .Properties as { Environment: { Variables: Record<string, unknown> } }).Environment.Variables;
+      expect(env).not.toHaveProperty("VESTIBULUM_ENROLLMENT");
+    }
+  });
+});
+
+describe("disable_ends_sessions — auth-signout's window for an expired ID token", () => {
+  const signoutEnv = (t: Template) =>
+    (t.findResources("AWS::Lambda::Function")[functionIdByDescription(t, "auth-signout endpoint")]!
+      .Properties as { Environment: { Variables: Record<string, unknown> } }).Environment.Variables;
+
+  it("defaults to the pool's refresh-token validity (24 h for the mock identity)", () => {
+    expect(signoutEnv(template)["VESTIBULUM_REFRESH_TOKEN_VALIDITY_SECONDS"]).toBe("86400");
+  });
+
+  it("follows the site's own refreshTokenValidity override (the client the cookie belongs to)", () => {
+    const t = buildSite({ refreshTokenValidity: cdk.Duration.days(7) });
+    expect(signoutEnv(t)["VESTIBULUM_REFRESH_TOKEN_VALIDITY_SECONDS"]).toBe(String(7 * 86400));
+  });
+
+  it("auth-verify gets the same value: it is the lifetime of the ID-token cookie", () => {
+    const env = (t: Template) =>
+      (t.findResources("AWS::Lambda::Function")[functionIdByDescription(t, "auth-verify endpoint")]!
+        .Properties as { Environment: { Variables: Record<string, unknown> } }).Environment.Variables;
+    expect(env(template)["VESTIBULUM_REFRESH_TOKEN_VALIDITY_SECONDS"]).toBe("86400");
+    expect(env(buildSite({ refreshTokenValidity: cdk.Duration.days(7) }))["VESTIBULUM_REFRESH_TOKEN_VALIDITY_SECONDS"]).toBe(
+      String(7 * 86400),
+    );
+  });
+
+  it("auth-login is not given it", () => {
+    for (const needle of ["auth-login endpoint"]) {
+      const env = (template.findResources("AWS::Lambda::Function")[functionIdByDescription(template, needle)]!
+        .Properties as { Environment: { Variables: Record<string, unknown> } }).Environment.Variables;
+      expect(env).not.toHaveProperty("VESTIBULUM_REFRESH_TOKEN_VALIDITY_SECONDS");
+    }
   });
 });
 
@@ -178,12 +288,23 @@ describe("runtimes (U14)", () => {
     },
   );
 
-  it("the Lambda@Edge check-auth function stays on a runtime Lambda@Edge is known to accept (nodejs22.x)", () => {
-    template.hasResourceProperties("AWS::Lambda::Function", {
-      Runtime: "nodejs22.x",
-      Handler: "index.handler",
-      Code: Match.anyValue(),
-    });
+  /** The check-auth Lambda@Edge function: the one whose name the config bake targets. */
+  const edgeFunction = () => {
+    const bake = Object.values(template.findResources("Custom::VestibulumCheckAuthConfig"))[0]!;
+    const target = JSON.stringify((bake.Properties as { FunctionName: unknown }).FunctionName);
+    const [id, fn] = Object.entries(template.findResources("AWS::Lambda::Function")).find(([logicalId]) =>
+      target.includes(logicalId),
+    )!;
+    return { id, runtime: (fn.Properties as { Runtime: string }).Runtime, bake };
+  };
+
+  it("the Lambda@Edge check-auth function runs nodejs24.x (verified live: CloudFront accepts it)", () => {
+    expect(edgeFunction().runtime).toBe("nodejs24.x");
+  });
+
+  it("the config bake re-runs when the edge runtime changes (its Runtime input is the edge function's runtime)", () => {
+    const { runtime, bake } = edgeFunction();
+    expect((bake.Properties as { Runtime?: string }).Runtime).toBe(runtime);
   });
 
   it("no regional function is on a runtime older than nodejs22.x", () => {

@@ -25,6 +25,7 @@ import {
   type CreateAuthChallengeEvent,
 } from "../../../../src/lambda/handlers/create-auth-challenge/index.js";
 import { RuntimeEnv } from "../../../../src/lambda/shared/runtime-env.js";
+import { FakeAllowList } from "../../fakes/fake-allow-list.js";
 
 const ddbMock = mockClient(DynamoDBClient);
 const sesMock = mockClient(SESClient);
@@ -60,6 +61,7 @@ describe("createCreateAuthChallengeHandler — unknown user (no email attribute)
       ses: sesMock as unknown as SESClient,
       sleep: () => Promise.resolve(), // no real response floor in this test
       resolveHmacKey: () => Promise.resolve("test-hmac-key-not-a-secret"),
+      allowList: new FakeAllowList(), // nobody is on it: the phantom is not found
     });
   }
 
@@ -70,9 +72,11 @@ describe("createCreateAuthChallengeHandler — unknown user (no email attribute)
     // but the verifier rejects it (token_hash "denied").
     expect(result.response.challengeMetadata).toBe("MAGIC_LINK");
     expect(result.response.privateChallengeParameters).toMatchObject({
-      token_hash: "denied",
       quarantined: "true",
     });
+    // ... with hashes of values nobody holds, in the real challenge's shape.
+    expect(result.response.privateChallengeParameters?.["token_hash"]).toMatch(/^[0-9a-f]{64}$/);
+    expect(result.response.privateChallengeParameters?.["code_hash"]).toMatch(/^[0-9a-f]{64}$/);
   });
 
   it("sends no email and writes no token for an unknown address", async () => {
@@ -84,13 +88,14 @@ describe("createCreateAuthChallengeHandler — unknown user (no email attribute)
     expect(ddbMock.commandCalls(PutItemCommand)).toHaveLength(0);
   });
 
-  it("does the same reads as a real caller (denylist lookup + counter write), so it is not faster", async () => {
+  it("does the same reads as a real caller (denylist lookup + both counter writes), so it is not faster", async () => {
     // Previously this path returned before any DynamoDB call, which made unknown
     // addresses measurably faster than real ones (signin_request_indistinguishable).
     await handlerUnderTest()(phantomUserEvent("nobody@probe.example"));
     expect(ddbMock.calls().map((c) => c.args[0].constructor.name)).toEqual([
       "GetItemCommand",
-      "UpdateItemCommand",
+      "UpdateItemCommand", // the 15-minute window counter
+      "UpdateItemCommand", // the daily counter
     ]);
   });
 

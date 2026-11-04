@@ -6,7 +6,7 @@
  * them verbatim.
  */
 
-import { createHash, randomBytes } from "crypto";
+import { createHash, randomBytes, randomInt } from "crypto";
 
 /**
  * DynamoDB attribute that holds a row's expiry (epoch seconds) on the token,
@@ -37,11 +37,79 @@ export const DEFAULT_TOKEN_TTL_MINUTES = 10;
  */
 export const DEFAULT_SIGNIN_FLOOR_MS = 2500;
 
-/** CreateAuthChallenge response floor, so direct Cognito callers see flat latency. */
-export const DEFAULT_CREATE_FLOOR_MS = 400;
+/**
+ * CreateAuthChallenge response floor, so direct Cognito callers see flat latency.
+ *
+ * Measured live (eu-central-1, warm, n≈20 per class) at a 400 ms floor: the
+ * silent path sat on the floor (p90 404 ms), the sending path did not (p90
+ * 439 ms, max 870 ms). The floor must exceed the sending path's p99, so it is
+ * 1000 ms. Re-measure per stage.
+ */
+export const DEFAULT_CREATE_FLOOR_MS = 1000;
 
 /** The token is 43 base64url characters; anything much longer is not an answer. */
 export const MAX_ANSWER_LENGTH = 64;
+
+/** Enrolment modes (`signin_no_self_signup`). */
+export type Enrollment = "admin-only" | "self-signup";
+
+/**
+ * Parses `VESTIBULUM_ENROLLMENT`. Unset or empty is the safe default,
+ * `admin-only`; any value that is not one of the two modes is `undefined` so a
+ * caller fails closed rather than guess (a typo must not open self-signup, and
+ * must not silently lock everyone out either).
+ */
+export function parseEnrollment(raw: string | undefined): Enrollment | undefined {
+  if (raw === undefined || raw === "") return "admin-only";
+  return raw === "admin-only" || raw === "self-signup" ? raw : undefined;
+}
+
+/** Cognito's own default refresh-token validity: 30 days, in seconds. */
+export const DEFAULT_REFRESH_TOKEN_VALIDITY_SECONDS = 30 * 24 * 60 * 60;
+
+/**
+ * Parses `VESTIBULUM_REFRESH_TOKEN_VALIDITY_SECONDS`. Unset or empty is the
+ * 30-day default; anything that is not a positive integer is `undefined`, so
+ * the caller fails closed rather than widen a window (auth-signout's expired-ID-
+ * token window) or a cookie lifetime (auth-verify's ID-token cookie).
+ */
+export function parseRefreshTokenValiditySeconds(raw: string | undefined): number | undefined {
+  if (raw === undefined || raw === "") return DEFAULT_REFRESH_TOKEN_VALIDITY_SECONDS;
+  if (!/^\d+$/.test(raw)) return undefined;
+  const n = Number.parseInt(raw, 10);
+  return n > 0 ? n : undefined;
+}
+
+/** A link token: 32 random bytes, base64url, 43 characters. */
+const TOKEN_ANSWER = /^[A-Za-z0-9_-]{43}$/;
+/** The typed fallback code: exactly 8 ASCII digits. */
+const CODE_ANSWER = /^[0-9]{8}$/;
+
+/** Which of the two accepted answer forms a string is, or `undefined` for neither. */
+export type AnswerForm = "token" | "code";
+
+/** Classifies an answer (`signin_answer_compare_constant_time`). Never throws. */
+export function classifyAnswer(answer: unknown): AnswerForm | undefined {
+  if (typeof answer !== "string") return undefined;
+  if (TOKEN_ANSWER.test(answer)) return "token";
+  if (CODE_ANSWER.test(answer)) return "code";
+  return undefined;
+}
+
+/**
+ * An 8-digit code drawn uniformly from [0, 10^8) and zero-padded. `randomInt`
+ * uses rejection sampling, so there is no modulo bias. 10^8 values, one answer
+ * per session and 20 sessions per address per day bound guessing at about
+ * 7·10⁻⁵ a year per address (`signin_attempts_bounded`).
+ */
+export function newSigninCode(): string {
+  return randomInt(0, 100_000_000).toString().padStart(8, "0");
+}
+
+/** SHA-256 of a UTF-8 string, hex-encoded. */
+export function sha256Hex(input: string): string {
+  return createHash("sha256").update(input).digest("hex");
+}
 
 /**
  * Parses a token TTL. Returns `undefined` when the value is not an integer in

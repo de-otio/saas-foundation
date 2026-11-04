@@ -14,7 +14,11 @@ import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { createHash, randomBytes } from 'crypto';
 import { loadClientConfigByClientId } from '../shared/client-config-loader.js';
 import { hmacEmail, resolveEmailHmacKeyFromEnv } from '../../shared/email-hmac.js';
-import { isDenylisted } from '../../handlers/create-auth-challenge/quarantine-check.js';
+import {
+  DenylistUnavailableError,
+  isDenylisted,
+} from '../../handlers/create-auth-challenge/quarantine-check.js';
+import { TTL_ATTRIBUTE } from '../../shared/signin.js';
 import { tryConsumeRateLimit, DEFAULT_SENDS_PER_WINDOW } from '../../handlers/create-auth-challenge/rate-limit.js';
 
 /** Minimal Cognito CreateAuthChallenge event shape. */
@@ -138,9 +142,17 @@ export function createSharedCreateAuthChallengeHandler(deps: CreateAuthChallenge
     // for both the denylist key and the token-row `email_hmac`.
     const hmacKey = await resolveEmailHmacKeyFromEnv();
 
-    // Denylist check.
-    if (await isDenylisted(ddb, denylistTable, email, hmacKey)) {
-      return failClosedChallenge(event, email, 'denylisted');
+    // Denylist check. Fails closed (`signin_fails_closed`): an unreadable or
+    // unconfigured denylist is an unanswerable challenge, never "not denylisted".
+    try {
+      if (await isDenylisted(ddb, denylistTable, email, hmacKey)) {
+        return failClosedChallenge(event, email, 'denylisted');
+      }
+    } catch (err) {
+      if (err instanceof DenylistUnavailableError) {
+        return failClosedChallenge(event, email, 'denylist_unavailable');
+      }
+      throw err;
     }
 
     // Rate limit.
@@ -148,6 +160,7 @@ export function createSharedCreateAuthChallengeHandler(deps: CreateAuthChallenge
       client: ddb,
       tableName: rateLimitTable,
       email,
+      hmacKey,
       limit: sendsPerWindow,
       nowMs: now,
     });
@@ -170,7 +183,9 @@ export function createSharedCreateAuthChallengeHandler(deps: CreateAuthChallenge
           token_hash: { S: hash },
           email_hmac: { S: emailHmac },
           created_at: { N: String(Math.floor(now / 1000)) },
-          ttl: { N: String(ttlEpochSeconds) },
+          // The attribute the MagicLinkTokens table's TTL names (`expires_at`);
+          // the Verify trigger compares it with the clock, the TTL only cleans up.
+          [TTL_ATTRIBUTE]: { N: String(ttlEpochSeconds) },
         },
         ConditionExpression: 'attribute_not_exists(token_hash)',
       }),

@@ -83,28 +83,49 @@ function escapeRegExp(s: string): string {
   return s.replace(/[\\^$.*+?()[\]{}|/-]/g, "\\$&");
 }
 
-export function sdkActionsUsedBy(handlerDir: string): Set<string> {
+/** The IAM actions the SDK commands named in ONE source file map to. */
+export function sdkActionsUsedByFile(file: string): Set<string> {
   const used = new Set<string>();
-  const dir = path.join(HANDLERS_DIR, handlerDir);
-  for (const file of fs.readdirSync(dir).filter((f) => f.endsWith(".ts"))) {
-    const src = fs.readFileSync(path.join(dir, file), "utf8");
-    for (const [pkg, prefix] of Object.entries(SERVICES)) {
-      const importRe = new RegExp(
-        `import\\s*\\{([^}]*)\\}\\s*from\\s*"${escapeRegExp(pkg)}"`,
-        "g",
-      );
-      for (const m of src.matchAll(importRe)) {
-        const names = m[1]!
-          .split(",")
-          .map((n) => n.trim().replace(/^type\s+/, ""))
-          .filter((n) => n.endsWith("Command"));
-        for (const name of names) {
-          if (new RegExp(`new\\s+${name}\\s*\\(`).test(src)) {
-            used.add(`${prefix}:${name.replace(/Command$/, "")}`);
-          }
+  const src = fs.readFileSync(file, "utf8");
+  for (const [pkg, prefix] of Object.entries(SERVICES)) {
+    const importRe = new RegExp(
+      `import\\s*\\{([^}]*)\\}\\s*from\\s*"${escapeRegExp(pkg)}"`,
+      "g",
+    );
+    for (const m of src.matchAll(importRe)) {
+      const names = m[1]!
+        .split(",")
+        .map((n) => n.trim().replace(/^type\s+/, ""))
+        .filter((n) => n.endsWith("Command"));
+      for (const name of names) {
+        if (new RegExp(`new\\s+${name}\\s*\\(`).test(src)) {
+          used.add(`${prefix}:${name.replace(/Command$/, "")}`);
         }
       }
     }
   }
   return used;
 }
+
+/**
+ * The IAM actions the SOURCE of one handler directory sends. `exclude` names
+ * files (relative to the directory) that are NOT part of the code path under
+ * test — e.g. `auth-login/self-signup.ts`, which only runs in the opt-in
+ * `self-signup` enrolment mode and is granted `cognito-idp:SignUp` only there.
+ */
+export function sdkActionsUsedBy(
+  handlerDir: string,
+  options: { readonly exclude?: readonly string[] } = {},
+): Set<string> {
+  const used = new Set<string>();
+  const dir = path.join(HANDLERS_DIR, handlerDir);
+  for (const file of fs.readdirSync(dir).filter((f) => f.endsWith(".ts"))) {
+    if (options.exclude?.includes(file) === true) continue;
+    for (const a of sdkActionsUsedByFile(path.join(dir, file))) used.add(a);
+  }
+  return used;
+}
+
+/** Absolute path to a module of the runtime package's shared directory. */
+export const sharedModule = (name: string): string =>
+  path.resolve(HANDLERS_DIR, "..", "shared", name);

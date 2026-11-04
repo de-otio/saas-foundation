@@ -11,6 +11,11 @@
  * Plus the endpoint's existing gates: CSRF/Origin, body parsing, last-hop
  * x-forwarded-for, per-IP rate limit (an over-limit attempt never touches Cognito).
  *
+ * This file runs the handler in the LEGACY `self-signup` enrolment mode (it
+ * exercises the SignUp-swallowing parity and the shared gates); the default
+ * `admin-only` mode — no SignUp, allow-list lookup, phantom users — is covered
+ * by `admin-only.test.ts` and `no-self-signup.test.ts`.
+ *
  * Determinism: Cognito + DynamoDB are mocked at the SDK boundary via
  * aws-sdk-client-mock; the clock, sleep and secret generator are injected.
  */
@@ -121,6 +126,8 @@ beforeEach(() => {
   process.env[RuntimeEnv.COGNITO_CLIENT_ID] = CLIENT_ID;
   process.env[RuntimeEnv.RATE_LIMIT_TABLE_NAME] = RATE_TABLE;
   process.env[RuntimeEnv.BINDING_TABLE_NAME] = BINDING_TABLE;
+  process.env[RuntimeEnv.ENROLLMENT] = "self-signup";
+  Reflect.deleteProperty(process.env, RuntimeEnv.COGNITO_USER_POOL_ID);
   Reflect.deleteProperty(process.env, RuntimeEnv.TOKEN_TTL_MINUTES);
   Reflect.deleteProperty(process.env, RuntimeEnv.SIGNIN_FLOOR_MS);
   Reflect.deleteProperty(process.env, RuntimeEnv.LOGIN_IP_PER_WINDOW);

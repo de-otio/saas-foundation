@@ -1,10 +1,20 @@
 /**
  * auth-login — regional Lambda endpoint for the magic-link login form.
  *
- * Performs the server-side SignUp + InitiateAuth (CUSTOM_AUTH) that the browser
- * used to call against Cognito directly. Moving it server-side lets us gate the
- * flow behind a per-client-IP rate limit and keep the Cognito client id out of
- * the browser.
+ * Performs the server-side InitiateAuth (CUSTOM_AUTH) that the browser used to
+ * call against Cognito directly. Moving it server-side lets us gate the flow
+ * behind a per-client-IP rate limit and keep the Cognito client id out of the
+ * browser.
+ *
+ * Enrolment (`signin_no_self_signup`, `VESTIBULUM_ENROLLMENT`):
+ * - `admin-only` (default): NO `SignUp` is ever called. The normalised address
+ *   (U18) is looked up on the allow-list; a subject becomes the `InitiateAuth`
+ *   username, an unknown address (or an unavailable allow-list) gets a phantom
+ *   username drawn per call, so Cognito runs its user-not-found path. Every
+ *   outcome is still the same `202 {}`.
+ * - `self-signup` (legacy, opt-in, a documented deviation from I9): the address
+ *   is signed up on the fly via `./self-signup.js`, the only module that may
+ *   import `SignUpCommand`.
  *
  * Browser binding (`signin_link_bound_to_requesting_browser`): the Cognito
  * `Session` NEVER reaches the browser. It is stored server-side under
@@ -22,8 +32,9 @@
  * Other properties:
  * - Origin header CSRF check (prevents cross-site form submissions).
  * - Per-client-IP rate limit (cost-DoS / enumeration brake).
- * - Enumeration parity: SignUp errors (existing user, disallowed domain via a
- *   PreSignUp rejection) are all swallowed so they're indistinguishable.
+ * - Enumeration parity: in self-signup mode SignUp errors (existing user,
+ *   disallowed domain via a PreSignUp rejection) are all swallowed so they're
+ *   indistinguishable; in admin-only mode unknown addresses get a phantom user.
  * - No PII in logs (emails never logged; metrics carry closed enums only).
  *
  * Direct Function URL access is blocked by CloudFront Origin Access Control
@@ -35,14 +46,15 @@
  * @see doc/01-package-design.md §Cookie and CSRF posture
  */
 
-import crypto from "crypto";
+import { randomUUID } from "crypto";
 import {
   CognitoIdentityProviderClient,
-  SignUpCommand,
   InitiateAuthCommand,
   type InitiateAuthCommandOutput,
 } from "@aws-sdk/client-cognito-identity-provider";
 import { DynamoDBClient, PutItemCommand } from "@aws-sdk/client-dynamodb";
+import { createCognitoAllowList, type SignInAllowList } from "../../shared/allow-list.js";
+import { normalizeEmail } from "../../shared/normalize-email.js";
 import { RuntimeEnv } from "../../shared/runtime-env.js";
 import {
   DEFAULT_SIGNIN_FLOOR_MS,
@@ -51,12 +63,15 @@ import {
   emitSigninMetric,
   hashBindingSecret,
   newBindingSecret,
+  parseEnrollment,
   parseMs,
   parseTokenTtlMinutes,
   realSleep,
   withFloor,
+  type Enrollment,
 } from "../../shared/signin.js";
 import { tryConsumeIpRateLimit, DEFAULT_LOGINS_PER_WINDOW } from "./ip-rate-limit.js";
+import { defaultRandomPassword, signUpQuietly } from "./self-signup.js";
 
 // ---------------------------------------------------------------------------
 // Lambda Function URL event shapes (minimal — only the fields we need).
@@ -89,10 +104,20 @@ export interface LambdaFunctionUrlResult {
 export interface AuthLoginHandlerDeps {
   readonly cognitoClient?: CognitoIdentityProviderClient;
   readonly dynamodb?: DynamoDBClient;
+  /**
+   * The sign-in allow-list (admin-only mode). Defaults to
+   * {@link createCognitoAllowList} on the pool named by `VESTIBULUM_USER_POOL_ID`.
+   */
+  readonly allowList?: SignInAllowList;
   /** Override clock for tests. Defaults to Date.now(). */
   readonly nowMs?: () => number;
-  /** Override the throwaway password generator for tests. */
+  /** Override the throwaway password generator for tests (self-signup mode). */
   readonly randomPassword?: () => string;
+  /**
+   * Draws the phantom username used for an unknown address (admin-only mode).
+   * Must look like a real Cognito username (a UUID v4); drawn per call.
+   */
+  readonly randomPhantom?: () => string;
   /** Override the binding-secret generator for tests. */
   readonly randomSecret?: () => string;
   /** Sleep used to hold the response floor. Injected in tests. */
@@ -126,16 +151,6 @@ function badRequest(): LambdaFunctionUrlResult {
   };
 }
 
-/**
- * Default throwaway password for SignUp. The user never sees or uses it — the
- * actual authentication is the CUSTOM_AUTH magic-link challenge — but Cognito
- * requires a complexity-compliant value. `Aa1!` covers the standard policy
- * (upper, lower, digit, symbol); the random suffix provides entropy.
- */
-function defaultRandomPassword(): string {
-  return `Aa1!${crypto.randomBytes(24).toString("base64url")}`;
-}
-
 /** Closed set of request outcomes, emitted as a metric (never logged per caller). */
 type RequestOutcome = "accepted" | "rate_limited" | "auth_error" | "store_error";
 
@@ -144,12 +159,15 @@ type RequestOutcome = "accepted" | "rate_limited" | "auth_error" | "store_error"
  *
  * Flow:
  * 1. Origin header CSRF check (403 on failure; 500-class on missing DOMAIN).
- * 2. Parse JSON body { email } (400 on malformed).
+ * 2. Parse JSON body { email }, normalise the address (U18); 400 on a malformed
+ *    body or an address that cannot be one (input validation: the same for every
+ *    address, so it is no oracle).
  * 3. Resolve client IP from the LAST x-forwarded-for hop (403 if absent).
  * 4. From here on, hold the response for at least `SIGNIN_FLOOR_MS` and answer
  *    `202 {}` + binding cookie whatever happens:
  *    a. Per-IP rate limit (over limit → no Cognito call, no session).
- *    b. SignUp (errors swallowed for enumeration parity) + InitiateAuth.
+ *    b. admin-only: allow-list lookup → InitiateAuth(subject | phantom);
+ *       self-signup: SignUp (errors swallowed) + InitiateAuth(address).
  *    c. Store `{ session, username }` under `SHA-256(b)`.
  */
 export function createAuthLoginHandler(deps: AuthLoginHandlerDeps = {}) {
@@ -171,44 +189,56 @@ export function createAuthLoginHandler(deps: AuthLoginHandlerDeps = {}) {
   const nowMs = deps.nowMs ?? (() => Date.now());
   const randomPassword = deps.randomPassword ?? defaultRandomPassword;
   const randomSecret = deps.randomSecret ?? newBindingSecret;
+  const randomPhantom = deps.randomPhantom ?? randomUUID;
   const sleep = deps.sleep ?? realSleep;
 
-  /** SignUp (swallowed) + InitiateAuth. Returns null when no session results. */
+  function getAllowList(userPoolId: string): SignInAllowList {
+    return deps.allowList ?? createCognitoAllowList({ client: getCognitoClient(), userPoolId });
+  }
+
+  /**
+   * Enrolment-specific user resolution, then InitiateAuth. Returns null when no
+   * session results.
+   */
   async function startAuth(
     clientId: string,
     email: string,
+    enrollment: Enrollment,
+    userPoolId: string,
   ): Promise<{ session: string; username: string } | null> {
-    // SignUp is idempotent-ish here: a returning user already exists
-    // (UsernameExistsException) and a disallowed domain is rejected by the
-    // PreSignUp trigger. We swallow ALL SignUp errors so that "already
-    // registered", "domain not allowed", and "freshly created" are
-    // indistinguishable to the caller — that's the enumeration-parity property.
-    try {
-      await getCognitoClient().send(
-        new SignUpCommand({
-          ClientId: clientId,
-          Username: email,
-          Password: randomPassword(),
-          UserAttributes: [{ Name: "email", Value: email }],
-        }),
-      );
-    } catch {
-      // Intentionally ignored — see comment above.
+    let username: string;
+    if (enrollment === "self-signup") {
+      // Legacy opt-in (a documented deviation from I9). A returning user already
+      // exists and a disallowed domain is rejected by the PreSignUp trigger;
+      // `signUpQuietly` swallows ALL of it so "already registered", "domain not
+      // allowed" and "freshly created" are indistinguishable to the caller.
+      await signUpQuietly(getCognitoClient(), clientId, email, randomPassword());
+      username = email;
+    } else {
+      // Admin-only: no SignUp. A subject is the Cognito username; an unknown
+      // address, an ambiguous one or an unavailable allow-list gets a phantom
+      // username drawn per call in the pool's username format, so Cognito runs
+      // its user-not-found path and every outcome stays the same 202 {}.
+      // A port that throws instead of answering is the same as `unavailable`.
+      const found = await getAllowList(userPoolId)
+        .lookup(email)
+        .catch(() => ({ ok: false as const }));
+      username = found.ok && found.value !== null ? found.value.subject : randomPhantom();
     }
 
     const result: InitiateAuthCommandOutput = await getCognitoClient().send(
       new InitiateAuthCommand({
         AuthFlow: "CUSTOM_AUTH",
         ClientId: clientId,
-        AuthParameters: { USERNAME: email },
+        AuthParameters: { USERNAME: username },
       }),
     );
     const session = result.Session;
     if (typeof session !== "string" || session === "") return null;
     // RespondToAuthChallenge needs USERNAME. Prefer the value Cognito echoes
-    // (the pool's real username, not the address); fall back to the address.
+    // (the pool's real username); fall back to the one we sent.
     const echoed = result.ChallengeParameters?.["USERNAME"];
-    return { session, username: typeof echoed === "string" && echoed !== "" ? echoed : email };
+    return { session, username: typeof echoed === "string" && echoed !== "" ? echoed : username };
   }
 
   return async function handler(event: LambdaFunctionUrlEvent): Promise<LambdaFunctionUrlResult> {
@@ -244,7 +274,12 @@ export function createAuthLoginHandler(deps: AuthLoginHandlerDeps = {}) {
       if (typeof parsed["email"] !== "string" || parsed["email"] === "") {
         return badRequest();
       }
-      email = parsed["email"];
+      // U18: normalise before ANY Cognito call, in both enrolment modes.
+      const normalized = normalizeEmail(parsed["email"]);
+      if (normalized === undefined) {
+        return badRequest();
+      }
+      email = normalized;
     } catch {
       return badRequest();
     }
@@ -276,7 +311,13 @@ export function createAuthLoginHandler(deps: AuthLoginHandlerDeps = {}) {
     const bindingTable = process.env[RuntimeEnv.BINDING_TABLE_NAME];
     const clientId = process.env[RuntimeEnv.COGNITO_CLIENT_ID];
     const ttlMinutes = parseTokenTtlMinutes(process.env[RuntimeEnv.TOKEN_TTL_MINUTES]);
+    // An unknown enrolment value must neither open self-signup nor guess.
+    const enrollment = parseEnrollment(process.env[RuntimeEnv.ENROLLMENT]);
+    // Admin-only needs a pool to look addresses up in (unless a port is injected).
+    const userPoolId = process.env[RuntimeEnv.COGNITO_USER_POOL_ID] ?? "";
     if (
+      enrollment === undefined ||
+      (enrollment === "admin-only" && deps.allowList === undefined && userPoolId === "") ||
       rateLimitTable === undefined ||
       rateLimitTable === "" ||
       bindingTable === undefined ||
@@ -312,7 +353,7 @@ export function createAuthLoginHandler(deps: AuthLoginHandlerDeps = {}) {
           nowMs: nowMs(),
         });
         if (allowed) {
-          started = await startAuth(clientId, email);
+          started = await startAuth(clientId, email, enrollment, userPoolId);
           if (started === null) outcome = "auth_error";
         } else {
           outcome = "rate_limited";

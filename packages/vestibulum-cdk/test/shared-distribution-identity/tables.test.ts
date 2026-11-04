@@ -141,7 +141,7 @@ describe("ClientConfigTable", () => {
 // ---------------------------------------------------------------------------
 
 describe("ReservationsTable", () => {
-  it("creates a table with PK 'key' and TTL 'expiresAt'", () => {
+  it("creates a table with PK 'key' and TTL 'expires_at'", () => {
     const stack = makeStack("ReservationsBasicStack");
     new ReservationsTable(stack, "Reservations");
 
@@ -149,7 +149,7 @@ describe("ReservationsTable", () => {
     template.hasResourceProperties("AWS::DynamoDB::Table", {
       KeySchema: [{ AttributeName: "key", KeyType: "HASH" }],
       TimeToLiveSpecification: {
-        AttributeName: "expiresAt",
+        AttributeName: "expires_at",
         Enabled: true,
       },
     });

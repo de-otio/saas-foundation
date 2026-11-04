@@ -219,6 +219,16 @@ export type { AuthSignoutHandlerDeps } from "./lambda/handlers/auth-signout/inde
 export { createEdgeCheckAuthHandler } from "./lambda/edge/check-auth/index.js";
 export type { VestibulumEdgeConfig } from "./lambda/edge/check-auth/index.js";
 
+// ---- Sign-in allow-list port (signin_mail_only_to_eligible) ------------------
+export { createCognitoAllowList, eligible } from "./lambda/shared/allow-list.js";
+export type {
+  AllowListResult,
+  CognitoAllowListOptions,
+  Eligibility,
+  SignInAllowList,
+} from "./lambda/shared/allow-list.js";
+export { normalizeEmail } from "./lambda/shared/normalize-email.js";
+
 // ---- Runtime env constants -------------------------------------------------
 export { RuntimeEnv } from "./lambda/shared/runtime-env.js";
 export type { RuntimeEnvKey } from "./lambda/shared/runtime-env.js";

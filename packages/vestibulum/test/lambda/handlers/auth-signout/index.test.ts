@@ -36,14 +36,21 @@ function event(opts: {
   refreshToken?: string;
   via?: "header" | "cookies";
   origin?: string | null;
+  method?: string;
+  contentType?: string | null;
 } = {}): LambdaFunctionUrlEvent {
   const pairs: string[] = [];
   if (opts.idToken !== undefined) pairs.push(`${ID_TOKEN_COOKIE_NAME}=${opts.idToken}`);
   if (opts.refreshToken !== undefined) pairs.push(`${REFRESH_TOKEN_COOKIE_NAME}=${opts.refreshToken}`);
   const headers: Record<string, string | undefined> = {};
   if (opts.origin !== null) headers["origin"] = opts.origin ?? `https://${DOMAIN}`;
+  if (opts.contentType !== null) headers["content-type"] = opts.contentType ?? "application/json";
   if (opts.via === "header") headers["cookie"] = pairs.join("; ");
-  return { headers, ...(opts.via === "header" || pairs.length === 0 ? {} : { cookies: pairs }) };
+  return {
+    headers,
+    requestContext: { http: { method: opts.method ?? "POST" } },
+    ...(opts.via === "header" || pairs.length === 0 ? {} : { cookies: pairs }),
+  };
 }
 
 const verifies = (username: string) => () => Promise.resolve({ username });
@@ -154,6 +161,42 @@ describe("a failed revocation is reported, not swallowed", () => {
     expect(res.statusCode).toBe(200);
     expect(signOuts()).toHaveLength(0);
     expect(outcomes()).toEqual(["error"]);
+  });
+});
+
+describe("signout is a POST with a JSON content type, from this origin (like /auth-verify)", () => {
+  it.each(["GET", "PUT", "DELETE", "HEAD", "OPTIONS"])("%s revokes nobody and is a 405 with Allow: POST", async (method) => {
+    const res = await handler(verifies("u"))(event({ idToken: "id.jwt.value", method }));
+    expect(res.statusCode).toBe(405);
+    expect(res.headers).toEqual({ Allow: "POST" });
+    expect(signOuts()).toHaveLength(0);
+    expect(res.cookies).toBeUndefined();
+  });
+
+  it("a request with no method at all is refused", async () => {
+    const e = event({ idToken: "id.jwt.value" });
+    const res = await handler(verifies("u"))({ headers: e.headers!, cookies: e.cookies! });
+    expect(res.statusCode).toBe(405);
+    expect(signOuts()).toHaveLength(0);
+  });
+
+  it.each([
+    ["application/x-www-form-urlencoded"],
+    ["multipart/form-data; boundary=x"],
+    ["text/plain"],
+    [null],
+  ])("content type %s revokes nobody and is a 415 (a cross-site form cannot send JSON without a preflight)", async (contentType) => {
+    const res = await handler(verifies("u"))(event({ idToken: "id.jwt.value", contentType }));
+    expect(res.statusCode).toBe(415);
+    expect(signOuts()).toHaveLength(0);
+  });
+
+  it("application/json with a charset is accepted", async () => {
+    const res = await handler(verifies("u"))(
+      event({ idToken: "id.jwt.value", contentType: "Application/JSON; charset=utf-8" }),
+    );
+    expect(res.statusCode).toBe(200);
+    expect(signOuts()).toHaveLength(1);
   });
 });
 

@@ -5,7 +5,7 @@
  *   0. Idempotency check (composite key = `${idempotencyKey}#${subdomain}`)
  *   1. Input validation (Zod pre-validated, additional runtime checks)
  *   2. Reserve subdomain + tenantId atomically via TransactWriteItems
- *      with `attribute_not_exists OR expiresAt < :now` (the B3 fix)
+ *      with `attribute_not_exists OR expires_at < :now` (the B3 fix)
  *   3. Create Cognito app client (with refresh-token rotation, no REFRESH_TOKEN_AUTH)
  *   4. Write ClientConfig row (compensation on failure)
  *   5. Persist idempotency record (24-hour TTL)
@@ -28,6 +28,7 @@ import {
   DeleteUserPoolClientCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
 import type { CreateTenantRequest, CreateTenantResponse } from '../schemas.js';
+import { TTL_ATTRIBUTE } from '../../../shared/signin.js';
 import { emitTenantCreated, emitCompensationTriggered } from '../metrics.js';
 import type { CallerIdentity } from '../audit-log.js';
 import { auditCreateTenant } from '../audit-log.js';
@@ -100,7 +101,16 @@ export async function createTenant(
     }),
   );
 
-  if (existingItem.Item) {
+  // DynamoDB TTL deletion lags by hours and is cleanup only: an expired record
+  // that is still present must be treated as absent, so compare its expiry with
+  // the clock. A record with no readable expiry is not trusted either.
+  const idempotencyExpiry = Number(existingItem.Item?.[TTL_ATTRIBUTE]?.N);
+  const idempotencyLive =
+    existingItem.Item !== undefined &&
+    Number.isFinite(idempotencyExpiry) &&
+    idempotencyExpiry > Math.floor(Date.now() / 1000);
+
+  if (existingItem.Item && idempotencyLive) {
     const stored = JSON.parse(existingItem.Item['response']?.S ?? '{}') as CreateTenantResponse;
     // Defensive: stored response must match this request's subdomain + tenantId.
     if (stored.subdomain !== req.subdomain || stored.tenantId !== req.tenantId) {
@@ -130,10 +140,10 @@ export async function createTenant(
               TableName: reservationsTable,
               Item: {
                 key: { S: `subdomain#${req.subdomain}` },
-                expiresAt: { N: String(reservationTtl) },
+                [TTL_ATTRIBUTE]: { N: String(reservationTtl) },
               },
               ConditionExpression: 'attribute_not_exists(#k) OR #exp < :now',
-              ExpressionAttributeNames: { '#k': 'key', '#exp': 'expiresAt' },
+              ExpressionAttributeNames: { '#k': 'key', '#exp': TTL_ATTRIBUTE },
               ExpressionAttributeValues: { ':now': { N: String(now) } },
             },
           },
@@ -142,10 +152,10 @@ export async function createTenant(
               TableName: reservationsTable,
               Item: {
                 key: { S: `tenantId#${req.tenantId}` },
-                expiresAt: { N: String(reservationTtl) },
+                [TTL_ATTRIBUTE]: { N: String(reservationTtl) },
               },
               ConditionExpression: 'attribute_not_exists(#k) OR #exp < :now',
-              ExpressionAttributeNames: { '#k': 'key', '#exp': 'expiresAt' },
+              ExpressionAttributeNames: { '#k': 'key', '#exp': TTL_ATTRIBUTE },
               ExpressionAttributeValues: { ':now': { N: String(now) } },
             },
           },
@@ -274,7 +284,7 @@ export async function createTenant(
         Item: {
           idempotencyKey: { S: compositeIdempotencyKey },
           response: { S: JSON.stringify(response) },
-          expiresAt: { N: String(Math.floor(Date.now() / 1000) + 86400) },
+          [TTL_ATTRIBUTE]: { N: String(Math.floor(Date.now() / 1000) + 86400) },
         },
       }),
     )

@@ -42,6 +42,7 @@ import {
 const ddbMock = mockClient(DynamoDBClient);
 const TABLE = "magic-link-rate-limit";
 const EMAIL = "user@example.com";
+const KEY = "test-hmac-key-not-a-secret";
 // A fixed epoch (no real Date) that sits at a clean window boundary offset.
 const FIXED_NOW_MS = 1_700_000_000_000;
 
@@ -64,6 +65,7 @@ describe("tryConsumeRateLimit", () => {
       client: makeClient(),
       tableName: TABLE,
       email: EMAIL,
+      hmacKey: KEY,
       limit: DEFAULT_SENDS_PER_WINDOW,
       nowMs: FIXED_NOW_MS,
     });
@@ -83,6 +85,7 @@ describe("tryConsumeRateLimit", () => {
       client: makeClient(),
       tableName: TABLE,
       email: EMAIL,
+      hmacKey: KEY,
       limit: DEFAULT_SENDS_PER_WINDOW,
       nowMs: FIXED_NOW_MS,
     });
@@ -100,6 +103,7 @@ describe("tryConsumeRateLimit", () => {
       client: makeClient(),
       tableName: TABLE,
       email: EMAIL,
+      hmacKey: KEY,
       limit: 3,
       nowMs: FIXED_NOW_MS,
     });
@@ -120,6 +124,7 @@ describe("tryConsumeRateLimit", () => {
       client: makeClient(),
       tableName: TABLE,
       email: EMAIL,
+      hmacKey: KEY,
       limit: 3,
       nowMs: windowStart + 1,
     });
@@ -127,6 +132,7 @@ describe("tryConsumeRateLimit", () => {
       client: makeClient(),
       tableName: TABLE,
       email: EMAIL,
+      hmacKey: KEY,
       limit: 3,
       nowMs: midWindow,
     });
@@ -146,6 +152,7 @@ describe("tryConsumeRateLimit", () => {
       client: makeClient(),
       tableName: TABLE,
       email: EMAIL,
+      hmacKey: KEY,
       limit: 3,
       nowMs: FIXED_NOW_MS,
     });
@@ -154,6 +161,7 @@ describe("tryConsumeRateLimit", () => {
       client: makeClient(),
       tableName: TABLE,
       email: EMAIL,
+      hmacKey: KEY,
       limit: 3,
       nowMs: FIXED_NOW_MS + RATE_LIMIT_WINDOW_MS,
     });
@@ -169,6 +177,7 @@ describe("tryConsumeRateLimit", () => {
       client: makeClient(),
       tableName: TABLE,
       email: "User@Example.COM",
+      hmacKey: KEY,
       limit: 3,
       nowMs: FIXED_NOW_MS,
     });
@@ -176,6 +185,7 @@ describe("tryConsumeRateLimit", () => {
       client: makeClient(),
       tableName: TABLE,
       email: "user@example.com",
+      hmacKey: KEY,
       limit: 3,
       nowMs: FIXED_NOW_MS,
     });
@@ -185,6 +195,32 @@ describe("tryConsumeRateLimit", () => {
     expect(key0).toBe(key1);
   });
 
+  it("keys the bucket with the SECRET-keyed HMAC, not a plain SHA-256 (a table snapshot cannot be brute-forced for addresses)", async () => {
+    const { createHash, createHmac } = await import("node:crypto");
+    ddbMock.on(UpdateItemCommand).resolves({});
+    const run = async (key: string) => {
+      ddbMock.resetHistory();
+      await tryConsumeRateLimit({
+        client: makeClient(),
+        tableName: TABLE,
+        email: EMAIL,
+        hmacKey: key,
+        limit: 3,
+        nowMs: FIXED_NOW_MS,
+      });
+      return (ddbMock.commandCalls(UpdateItemCommand)[0]!.args[0].input.Key as { bucket_id: { S: string } })
+        .bucket_id.S;
+    };
+    const windowStart = Math.floor(FIXED_NOW_MS / RATE_LIMIT_WINDOW_MS) * RATE_LIMIT_WINDOW_MS;
+    const id = await run(KEY);
+    expect(id).toBe(createHmac("sha256", KEY).update(`window:${EMAIL}#${windowStart}`).digest("hex"));
+    // The old, unkeyed id is NOT what is written.
+    expect(id).not.toBe(createHash("sha256").update(`${EMAIL}#${windowStart}`).digest("hex"));
+    // Another secret, another bucket.
+    expect(await run("another-secret")).not.toBe(id);
+    expect(id).not.toContain("user");
+  });
+
   it("propagates non-conditional DynamoDB errors (fail-loud, never silently allow)", async () => {
     ddbMock.on(UpdateItemCommand).rejects(new Error("ProvisionedThroughputExceeded"));
     await expect(
@@ -192,6 +228,8 @@ describe("tryConsumeRateLimit", () => {
         client: makeClient(),
         tableName: TABLE,
         email: EMAIL,
+        hmacKey: KEY,
+      hmacKey: KEY,
         limit: 3,
         nowMs: FIXED_NOW_MS,
       }),

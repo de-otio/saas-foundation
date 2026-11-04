@@ -27,3 +27,12 @@ export const DEFAULT_TOKEN_TTL_MINUTES = 10;
 export const DEFAULT_SIGNIN_FLOOR_MS = 2500;
 export const MIN_SIGNIN_FLOOR_MS = 500;
 export const MAX_SIGNIN_FLOOR_MS = 6000;
+
+/**
+ * CreateAuthChallenge response floor in milliseconds. Measured live: at 400 ms
+ * the SES sending path exceeded the floor (p90 439 ms, max 870 ms) while the
+ * silent path did not, so the default is 1000 ms. Re-measure per stage.
+ */
+export const DEFAULT_CREATE_FLOOR_MS = 1000;
+export const MIN_CREATE_FLOOR_MS = 100;
+export const MAX_CREATE_FLOOR_MS = 5000;

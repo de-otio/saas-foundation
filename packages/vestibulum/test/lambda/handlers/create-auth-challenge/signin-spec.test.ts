@@ -4,8 +4,12 @@
  *
  *   signin_link_expires_10min          expires_at is written, under the TTL attribute's name
  *   signin_request_indistinguishable   same reads for every caller; every path waits for the floor
- *   signin_mail_only_to_eligible       quarantined / denylisted / rate-limited / unknown send nothing
+ *   signin_mail_only_to_eligible       quarantined / denylisted / rate-limited / unknown / ineligible send nothing
  *   (U9)                               a hard-bounced address (custom:email_quarantined) is not mailed
+ *
+ * The Create trigger runs in the default `admin-only` enrolment mode with an
+ * in-memory allow-list; `signin-security.test.ts` covers the allow-list and
+ * fail-closed invariants in depth.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -28,12 +32,17 @@ import {
   DEFAULT_CREATE_FLOOR_MS,
   TTL_ATTRIBUTE,
 } from "../../../../src/lambda/shared/signin.js";
+import { FakeAllowList } from "../../fakes/fake-allow-list.js";
 
 const ddbMock = mockClient(DynamoDBClient);
 const sesMock = mockClient(SESClient);
 
 const NOW_MS = 1_700_000_000_000;
 const EMAIL = "person@example.com";
+const SUBJECT = "11111111-2222-3333-4444-555555555555";
+
+/** The pool's users: SUBJECT is an enabled, verified user for EMAIL. */
+let allow: FakeAllowList;
 
 function setEnv(overrides: Record<string, string | undefined> = {}) {
   const env: Record<string, string | undefined> = {
@@ -45,6 +54,7 @@ function setEnv(overrides: Record<string, string | undefined> = {}) {
     [RuntimeEnv.TOKEN_TTL_MINUTES]: undefined,
     [RuntimeEnv.CREATE_FLOOR_MS]: undefined,
     [RuntimeEnv.SES_CONFIGURATION_SET]: undefined,
+    [RuntimeEnv.ENROLLMENT]: undefined, // default: admin-only
     ...overrides,
   };
   for (const [k, v] of Object.entries(env)) {
@@ -56,7 +66,7 @@ function setEnv(overrides: Record<string, string | undefined> = {}) {
 function realEvent(attrs: Record<string, string> = {}): CreateAuthChallengeEvent {
   return {
     userPoolId: "eu-central-1_test",
-    userName: "11111111-2222-3333-4444-555555555555",
+    userName: SUBJECT,
     request: { userAttributes: { email: EMAIL, ...attrs } },
     response: {},
   };
@@ -90,6 +100,8 @@ function build(sleep: (ms: number) => Promise<void>, extra: Record<string, unkno
     sleep,
     resolveHmacKey: () => Promise.resolve("test-hmac-key-not-a-secret"),
     randomToken: () => Buffer.alloc(32, 7),
+    randomCode: () => "12345678",
+    allowList: allow,
     ...extra,
   });
 }
@@ -114,6 +126,7 @@ const commandNames = () => ddbMock.calls().map((c) => c.args[0].constructor.name
 beforeEach(() => {
   ddbMock.reset();
   sesMock.reset();
+  allow = new FakeAllowList().add(SUBJECT, EMAIL);
   setEnv();
   ddbMock.on(PutItemCommand).resolves({});
   sesMock.on(SendEmailCommand).resolves({});
@@ -174,6 +187,26 @@ describe("signin_request_indistinguishable (timing + parity)", () => {
       event: () => realEvent({ "custom:email_quarantined": "true" }),
       mails: false,
     },
+    {
+      name: "disabled on the allow-list",
+      arrange: () => allow.setActive(SUBJECT, false),
+      event: () => realEvent(),
+      mails: false,
+    },
+    {
+      name: "removed from the allow-list",
+      arrange: () => allow.remove(SUBJECT),
+      event: () => realEvent(),
+      mails: false,
+    },
+    {
+      name: "allow-list unavailable",
+      arrange: () => {
+        allow.unavailable = true;
+      },
+      event: () => realEvent(),
+      mails: false,
+    },
   ];
 
   it.each(classes)("$name: waits for the floor and reads before deciding", async (c) => {
@@ -184,17 +217,27 @@ describe("signin_request_indistinguishable (timing + parity)", () => {
     // With a frozen clock no time has elapsed, so the handler must sleep the whole floor.
     expect(s.calls).toEqual([DEFAULT_CREATE_FLOOR_MS]);
 
-    // Every caller — the phantom included — does the denylist read and the counter write.
+    // Every caller — the phantom included — does the denylist read and the counter write ...
     expect(commandNames().slice(0, 2)).toEqual(["GetItemCommand", "UpdateItemCommand"]);
+    // ... and asks the allow-list the same single question about the event's own username.
+    expect(allow.gets).toEqual([c.event().userName]);
 
     expect(sesMock.commandCalls(SendEmailCommand)).toHaveLength(c.mails ? 1 : 0);
     expect(ddbMock.commandCalls(PutItemCommand)).toHaveLength(c.mails ? 1 : 0);
   });
 
-  it("a thrown error still waits for the floor", async () => {
+  it("a failed send is an unanswerable challenge, not an exception to Cognito, and still waits for the floor", async () => {
     sesMock.on(SendEmailCommand).rejects(new Error("ses down"));
     const s = sleeps();
-    await expect(build(s.sleep)(realEvent())).rejects.toThrow("ses down");
+    const result = await build(s.sleep)(realEvent());
+    expect(result.response.privateChallengeParameters?.["quarantined"]).toBe("true");
+    expect(s.calls).toEqual([DEFAULT_CREATE_FLOOR_MS]);
+  });
+
+  it("a configuration error (not a per-caller outcome) still throws, after the floor", async () => {
+    setEnv({ [RuntimeEnv.TOKEN_TTL_MINUTES]: "99" });
+    const s = sleeps();
+    await expect(build(s.sleep)(realEvent())).rejects.toThrow();
     expect(s.calls).toEqual([DEFAULT_CREATE_FLOOR_MS]);
   });
 
@@ -209,6 +252,7 @@ describe("signin_request_indistinguishable (timing + parity)", () => {
       sleep: s.sleep,
       resolveHmacKey: () => Promise.resolve("k"),
       randomToken: () => Buffer.alloc(32, 7),
+      allowList: allow,
     });
     await handler(phantomEvent());
     expect(s.calls).toHaveLength(1);
@@ -250,7 +294,12 @@ describe("U9: bounce quarantine is read", () => {
       Object.keys(real.response.privateChallengeParameters ?? {}).sort(),
     );
     expect(quarantined.response.challengeMetadata).toBe(real.response.challengeMetadata);
-    expect(quarantined.response.privateChallengeParameters?.["token_hash"]).toBe("denied");
+    // Unanswerable = the hash of a value nobody holds (random, 256 bits) — it
+    // looks like the real one and equals neither it nor any fixed marker.
+    const dummy = quarantined.response.privateChallengeParameters?.["token_hash"];
+    expect(dummy).toMatch(/^[0-9a-f]{64}$/);
+    expect(dummy).not.toBe(real.response.privateChallengeParameters?.["token_hash"]);
+    expect(quarantined.response.privateChallengeParameters?.["quarantined"]).toBe("true");
   });
 
   it("a false attribute does not block", async () => {

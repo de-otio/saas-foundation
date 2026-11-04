@@ -56,6 +56,13 @@ export const RuntimeEnv = {
   TOKEN_SENDS_PER_WINDOW: "VESTIBULUM_TOKEN_SENDS_PER_WINDOW",
 
   /**
+   * Maximum magic-link challenges per email address per UTC day
+   * (`signin_attempts_bounded`). Defaults to 20 when unset. Injected from
+   * MagicLinkIdentityProps.tokenSendsPerDay.
+   */
+  TOKEN_SENDS_PER_DAY: "VESTIBULUM_TOKEN_SENDS_PER_DAY",
+
+  /**
    * Maximum sign-up attempts per email per rate-limit window.
    * Injected at synth time from MagicLinkIdentityProps.signUpsPerWindow.
    */
@@ -130,6 +137,22 @@ export const RuntimeEnv = {
    * bounce-handler. Unset in tests.
    */
   SES_CONFIGURATION_SET: "VESTIBULUM_SES_CONFIGURATION_SET",
+
+  /**
+   * Enrolment mode (`signin_no_self_signup`): `admin-only` (the default when
+   * unset) or `self-signup`. Read by auth-login, CreateAuthChallenge and
+   * VerifyAuthChallengeResponse. Any other value is a deployment error and
+   * fails closed.
+   */
+  ENROLLMENT: "VESTIBULUM_ENROLLMENT",
+
+  /**
+   * Validity of the app client's refresh token in seconds. auth-signout accepts
+   * an expired ID token whose `exp` is at most this far in the past, so a user
+   * whose ID token has lapsed can still revoke their refresh token. Default 30
+   * days (Cognito's own default).
+   */
+  REFRESH_TOKEN_VALIDITY_SECONDS: "VESTIBULUM_REFRESH_TOKEN_VALIDITY_SECONDS",
 } as const;
 
 /** Union of all known runtime environment variable names. */

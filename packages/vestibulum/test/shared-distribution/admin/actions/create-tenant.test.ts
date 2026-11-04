@@ -99,7 +99,7 @@ describe('createTenant — idempotency', () => {
       Item: {
         idempotencyKey: { S: 'test-key-01234567#acme' },
         response: { S: JSON.stringify(storedResponse) },
-        expiresAt: { N: String(9_999_999_999) }, // far-future unix timestamp
+        expires_at: { N: String(9_999_999_999) }, // far-future unix timestamp
       },
     });
 
@@ -122,12 +122,106 @@ describe('createTenant — idempotency', () => {
       Item: {
         idempotencyKey: { S: 'test-key-01234567#acme' },
         response: { S: JSON.stringify(storedResponse) },
+        expires_at: { N: String(9_999_999_999) },
       },
     });
 
     await expect(
       createTenant(BASE_REQ, makeDeps(), CALLER, 'req-002'),
     ).rejects.toBeInstanceOf(IdempotencyConflictError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Expiry attribute and clock: DynamoDB TTL is cleanup only
+// (`expires_at`, the one attribute name every vestibulum table's TTL names)
+// ---------------------------------------------------------------------------
+
+describe('createTenant — expires_at and the clock', () => {
+  const stored = {
+    tenantId: 'acme',
+    subdomain: 'acme',
+    siteBaseUrl: 'https://acme.tenants.example.com',
+    clientId: 'stored-client-id',
+    createdAt: '2026-01-01T00:00:00.000Z',
+  };
+
+  // The handler reads the real clock, so expiries are built relative to it
+  // (margins of a minute or more).
+  // eslint-disable-next-line no-restricted-globals
+  const nowS = () => Math.floor(Date.now() / 1000);
+
+  function idempotencyRow(expiresAt: string | undefined) {
+    return {
+      idempotencyKey: { S: 'test-key-01234567#acme' },
+      response: { S: JSON.stringify(stored) },
+      ...(expiresAt === undefined ? {} : { expires_at: { N: expiresAt } }),
+    };
+  }
+
+  function arrangeFreshCreate() {
+    ddbMock.on(TransactWriteItemsCommand).resolves({});
+    ddbMock.on(PutItemCommand).resolves({});
+    ddbMock.on(DeleteItemCommand).resolves({});
+    cognitoMock
+      .on(CreateUserPoolClientCommand)
+      .resolves({ UserPoolClient: { ClientId: 'fresh-client-id' } });
+  }
+
+  it('an expired-but-not-yet-deleted idempotency record is treated as absent (TTL deletion lags by hours)', async () => {
+    ddbMock.on(GetItemCommand).resolves({ Item: idempotencyRow(String(nowS() - 60)) });
+    arrangeFreshCreate();
+    const result = await createTenant(BASE_REQ, makeDeps(), CALLER, 'req-exp-1');
+    expect(result.clientId).toBe('fresh-client-id'); // a new create ran, not the stored response
+    expect(cognitoMock.commandCalls(CreateUserPoolClientCommand)).toHaveLength(1);
+  });
+
+  it('a live idempotency record is still honoured', async () => {
+    ddbMock.on(GetItemCommand).resolves({ Item: idempotencyRow(String(nowS() + 3600)) });
+    const result = await createTenant(BASE_REQ, makeDeps(), CALLER, 'req-exp-2');
+    expect(result).toEqual(stored);
+    expect(cognitoMock.calls()).toHaveLength(0);
+  });
+
+  it.each([[undefined], ['not-a-number']])(
+    'an idempotency record whose expires_at is %s is not trusted',
+    async (bad) => {
+      ddbMock.on(GetItemCommand).resolves({ Item: idempotencyRow(bad) });
+      arrangeFreshCreate();
+      const result = await createTenant(BASE_REQ, makeDeps(), CALLER, 'req-exp-3');
+      expect(result.clientId).toBe('fresh-client-id');
+    },
+  );
+
+  it('a record written under the old `expiresAt` name is not trusted either', async () => {
+    ddbMock.on(GetItemCommand).resolves({
+      Item: {
+        idempotencyKey: { S: 'test-key-01234567#acme' },
+        response: { S: JSON.stringify(stored) },
+        expiresAt: { N: String(9_999_999_999) },
+      },
+    });
+    arrangeFreshCreate();
+    const result = await createTenant(BASE_REQ, makeDeps(), CALLER, 'req-exp-4');
+    expect(result.clientId).toBe('fresh-client-id');
+  });
+
+  it('writes expires_at (not expiresAt) on the reservations and on the idempotency record, and compares it with :now', async () => {
+    ddbMock.on(GetItemCommand).resolves({ Item: undefined });
+    arrangeFreshCreate();
+    await createTenant(BASE_REQ, makeDeps(), CALLER, 'req-exp-5');
+
+    const tx = ddbMock.commandCalls(TransactWriteItemsCommand)[0]!.args[0].input.TransactItems ?? [];
+    for (const item of tx) {
+      expect(item.Put?.Item).toHaveProperty('expires_at');
+      expect(item.Put?.Item).not.toHaveProperty('expiresAt');
+      expect(item.Put?.ExpressionAttributeNames?.['#exp']).toBe('expires_at');
+    }
+    const idempotencyPut = ddbMock
+      .commandCalls(PutItemCommand)
+      .find((c) => c.args[0].input.TableName === 'Idempotency')!;
+    expect(idempotencyPut.args[0].input.Item).toHaveProperty('expires_at');
+    expect(idempotencyPut.args[0].input.Item).not.toHaveProperty('expiresAt');
   });
 });
 

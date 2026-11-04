@@ -44,7 +44,8 @@ label {
   color: #333;
 }
 
-input[type="email"] {
+input[type="email"],
+input[type="text"] {
   width: 100%;
   padding: 10px 12px;
   border: 1px solid #ccc;
@@ -53,7 +54,8 @@ input[type="email"] {
   transition: border-color 0.2s;
 }
 
-input[type="email"]:focus {
+input[type="email"]:focus,
+input[type="text"]:focus {
   outline: none;
   border-color: #0066cc;
   box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.1);
@@ -83,6 +85,21 @@ input[type="email"]:focus {
 .submit-button:focus {
   outline: 2px solid #0066cc;
   outline-offset: 2px;
+}
+
+.code-form {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid #e5e5e5;
+}
+
+.code-form[hidden] {
+  display: none;
+}
+
+#code {
+  letter-spacing: 0.2em;
+  font-variant-numeric: tabular-nums;
 }
 
 .error-message {

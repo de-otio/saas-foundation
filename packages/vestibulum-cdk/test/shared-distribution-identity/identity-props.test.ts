@@ -31,6 +31,7 @@ const TEST_ENV = { account: "123456789012", region: "us-east-1" };
 
 interface DdbTableResource {
   Properties?: {
+    KeySchema?: Array<{ AttributeName?: string }>;
     SSESpecification?: { SSEEnabled?: boolean; SSEType?: string; KMSMasterKeyId?: unknown };
     TimeToLiveSpecification?: { AttributeName?: string };
   };
@@ -121,9 +122,11 @@ describe("SharedDistributionIdentity — tableKmsKey", () => {
 
     const template = Template.fromStack(stack);
     const tables = findDdbTables(template);
-    // Find the reservations table (TTL attribute 'expiresAt')
+    // Find the reservations table (partition key `key`; TTL attribute `expires_at`)
     const reservations = Object.values(tables).find(
-      (t) => t.Properties?.TimeToLiveSpecification?.AttributeName === "expiresAt",
+      (t) =>
+        t.Properties?.KeySchema?.[0]?.AttributeName === "key" &&
+        t.Properties?.TimeToLiveSpecification?.AttributeName === "expires_at",
     );
     expect(reservations).toBeDefined();
     // AWS_MANAGED means SSEEnabled is true but no KMSMasterKeyId; the
